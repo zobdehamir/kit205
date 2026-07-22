@@ -1,0 +1,17 @@
+{
+		"version": "1.0.0.0",
+		"author": {"name":"zobdehamir","email":"zobdehamir@gmail.com"},
+		"resources": [
+			{
+				"resourceId": "rId0",
+				"sourceType": 5,
+				"file": "resources/sankeyChartAC8A25A9E7964DD1AC0B406BE8E38D83.pbiviz.json"
+			}
+		],
+		"visual": {"name":"sankeyChart","displayName":"Sankey Chart","guid":"sankeyChartAC8A25A9E7964DD1AC0B406BE8E38D83","visualClassName":"Visual","version":"1.0.0.0","description":"A Sankey diagram visual for flow/relationship data, compatible with Power BI Report Server (API 5.2.0+).","supportUrl":"https://github.com/zobdehamir/kit205/issues","gitHubUrl":"https://github.com/zobdehamir/kit205"},
+		"metadata": {
+			"pbivizjson": {
+				"resourceId": "rId0"
+			}
+		}
+	}

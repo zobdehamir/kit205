@@ -1,0 +1,4 @@
+sankeyChart/node_modules/
+sankeyChart/.tmp/
+sankeyChart/webpack.statistics.*.html
+sankeyChart/.vscode/

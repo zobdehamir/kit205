@@ -1,0 +1,142 @@
+{
+    "dataRoles": [
+        {
+            "displayName": "Source",
+            "name": "source",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "Destination",
+            "name": "destination",
+            "kind": "Grouping"
+        },
+        {
+            "displayName": "Weight",
+            "name": "weight",
+            "kind": "Measure"
+        }
+    ],
+    "objects": {
+        "dataPoint": {
+            "properties": {
+                "defaultColor": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "colorByCategory": {
+                    "type": {
+                        "bool": true
+                    }
+                }
+            }
+        },
+        "links": {
+            "properties": {
+                "fill": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "linkOpacity": {
+                    "type": {
+                        "numeric": true
+                    }
+                },
+                "colorMode": {
+                    "type": {
+                        "enumeration": [
+                            { "value": "source", "displayName": "Source color" },
+                            { "value": "gradient", "displayName": "Source-target gradient" },
+                            { "value": "uniform", "displayName": "Single color" }
+                        ]
+                    }
+                }
+            }
+        },
+        "nodes": {
+            "properties": {
+                "nodeWidth": {
+                    "type": {
+                        "numeric": true
+                    }
+                },
+                "nodePadding": {
+                    "type": {
+                        "numeric": true
+                    }
+                }
+            }
+        },
+        "labels": {
+            "properties": {
+                "show": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "color": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "fontSize": {
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                },
+                "showValue": {
+                    "type": {
+                        "bool": true
+                    }
+                }
+            }
+        }
+    },
+    "dataViewMappings": [
+        {
+            "conditions": [
+                { "source": { "max": 1 }, "destination": { "max": 1 }, "weight": { "max": 1 } }
+            ],
+            "table": {
+                "rows": {
+                    "select": [
+                        { "for": { "in": "source" } },
+                        { "for": { "in": "destination" } },
+                        { "bind": { "to": "weight" } }
+                    ],
+                    "dataReductionAlgorithm": {
+                        "top": {}
+                    }
+                }
+            }
+        }
+    ],
+    "tooltips": {
+        "supportedTypes": {
+            "default": true,
+            "canvas": true
+        },
+        "roles": [
+            "source",
+            "destination",
+            "weight"
+        ]
+    },
+    "supportsMultiVisualSelection": true,
+    "privileges": []
+}

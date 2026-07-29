@@ -93,8 +93,14 @@ Power BI before the visual ever sees them.
 
 - **Data colors** – default node color, and whether nodes are auto-colored by location
 - **Links** – link color mode (source location color / source-target gradient / single color), link opacity
-- **Nodes** – node width, node padding
-- **Labels** – show/hide, text color, text size, show key count alongside the location name
+- **Nodes** – node width, node padding, and **Sort locations by** — how locations are ordered
+  top-to-bottom within each stage column: *Automatic* (d3-sankey's default, minimizes link
+  crossings), *Weight* (largest total flow first), or *Alphabetical*
+- **Labels** – show/hide, text color, text size, show key count alongside the location name.
+  The first stage column's labels sit to the right of the nodes, the last column's labels sit
+  to the left, and every other column's labels sit centered above — this keeps labels from
+  being clipped by the chart's outer edge. The visual also reserves extra left/right margin
+  (scaled off the label text size) so those edge labels have room to render.
 - **Sorting → Stage order** – optional comma-separated list giving the exact left-to-right
   stage sequence, e.g. `Arrival, Sale, Dispatch, Stock take`. Any stage value present in the
   data but missing from this list is appended at the end (nothing is dropped). Leave blank to

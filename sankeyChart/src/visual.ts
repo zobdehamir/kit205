@@ -190,16 +190,28 @@ export class Visual implements IVisual {
             tooltipInfo: link.tooltipInfo
         }));
 
-        const margin = { top: 4 + headerHeight, right: 4, bottom: 4, left: 4 };
+        const sideLabelMargin: number = showLabels ? Math.max(50, labelFontSize * 7) : 4;
+        const margin = { top: 4 + headerHeight, right: sideLabelMargin, bottom: 4, left: sideLabelMargin };
         const innerWidth: number = Math.max(1, width - margin.left - margin.right);
         const innerHeight: number = Math.max(1, height - margin.top - margin.bottom);
         const stageCount: number = stageLabels.length;
+
+        const nodeSortBy: string = this.settings.nodes.sortBy;
+        const nodeSortComparator: (a: LayoutNode, b: LayoutNode) => number = nodeSortBy === "weight"
+            ? (a, b) => (b.value ?? 0) - (a.value ?? 0)
+            : nodeSortBy === "alphabetical"
+                ? (a, b) => a.name.localeCompare(b.name)
+                : undefined;
 
         const sankeyGenerator = sankey<NodeExtraProps, LinkExtraProps>()
             .nodeWidth(nodeWidth)
             .nodePadding(nodePadding)
             .nodeAlign((node: LayoutNode) => stageCount > 1 ? node.stageIndex : 0)
             .extent([[margin.left, margin.top], [innerWidth, innerHeight]]);
+
+        if (nodeSortComparator) {
+            sankeyGenerator.nodeSort(nodeSortComparator);
+        }
 
         let graph: { nodes: LayoutNode[]; links: LayoutLink[] };
         try {
@@ -351,10 +363,14 @@ export class Visual implements IVisual {
             .append("text")
             .attr("class", "label");
 
+        const isFirstColumn = (d: LayoutNode): boolean => d.stageIndex === 0;
+        const isLastColumn = (d: LayoutNode): boolean => d.stageIndex === stageCount - 1;
+
         labelEnter.merge(labelSelection)
-            .attr("x", d => (d.x0 + d.x1) / 2)
-            .attr("y", d => d.y0 - 4)
-            .attr("text-anchor", "middle")
+            .attr("x", d => isFirstColumn(d) ? d.x1 + 6 : isLastColumn(d) ? d.x0 - 6 : (d.x0 + d.x1) / 2)
+            .attr("y", d => (isFirstColumn(d) || isLastColumn(d)) ? (d.y0 + d.y1) / 2 : d.y0 - 4)
+            .attr("dy", d => (isFirstColumn(d) || isLastColumn(d)) ? "0.35em" : null)
+            .attr("text-anchor", d => isFirstColumn(d) ? "start" : isLastColumn(d) ? "end" : "middle")
             .style("fill", labelColorFinal)
             .style("font-size", `${labelFontSize}px`)
             .text(d => showValue ? `${d.name} (${d.value})` : d.name);

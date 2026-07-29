@@ -73,6 +73,17 @@
                     "type": {
                         "numeric": true
                     }
+                },
+                "sortBy": {
+                    "displayName": "Sort locations by",
+                    "description": "How locations are ordered top-to-bottom within each stage column.",
+                    "type": {
+                        "enumeration": [
+                            { "value": "automatic", "displayName": "Automatic (minimize crossings)" },
+                            { "value": "weight", "displayName": "Weight (largest first)" },
+                            { "value": "alphabetical", "displayName": "Alphabetical" }
+                        ]
+                    }
                 }
             }
         },

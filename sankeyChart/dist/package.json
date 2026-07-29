@@ -1,5 +1,5 @@
 {
-		"version": "2.3.0.0",
+		"version": "2.4.0.0",
 		"author": {"name":"zobdehamir","email":"zobdehamir@gmail.com"},
 		"resources": [
 			{
@@ -8,7 +8,7 @@
 				"file": "resources/sankeyChartAC8A25A9E7964DD1AC0B406BE8E38D83.pbiviz.json"
 			}
 		],
-		"visual": {"name":"sankeyChart","displayName":"Sankey Chart","guid":"sankeyChartAC8A25A9E7964DD1AC0B406BE8E38D83","visualClassName":"Visual","version":"2.3.0.0","description":"A multi-stage Sankey diagram visual for Key/Stage/Location flow data, compatible with Power BI Report Server.","supportUrl":"https://github.com/zobdehamir/kit205/issues","gitHubUrl":"https://github.com/zobdehamir/kit205"},
+		"visual": {"name":"sankeyChart","displayName":"Sankey Chart","guid":"sankeyChartAC8A25A9E7964DD1AC0B406BE8E38D83","visualClassName":"Visual","version":"2.4.0.0","description":"A multi-stage Sankey diagram visual for Key/Stage/Location flow data, compatible with Power BI Report Server.","supportUrl":"https://github.com/zobdehamir/kit205/issues","gitHubUrl":"https://github.com/zobdehamir/kit205"},
 		"metadata": {
 			"pbivizjson": {
 				"resourceId": "rId0"

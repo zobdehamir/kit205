@@ -23,6 +23,7 @@ export interface VisualSettings {
     nodes: {
         nodeWidth: number;
         nodePadding: number;
+        sortBy: string;
     };
     labels: {
         show: boolean;
@@ -52,7 +53,8 @@ export const defaultSettings: VisualSettings = {
     },
     nodes: {
         nodeWidth: 16,
-        nodePadding: 12
+        nodePadding: 12,
+        sortBy: "automatic"
     },
     labels: {
         show: true,
@@ -106,7 +108,8 @@ export function parseSettings(dataView: DataView): VisualSettings {
         },
         nodes: {
             nodeWidth: getValue(objects, "nodes", "nodeWidth", defaultSettings.nodes.nodeWidth),
-            nodePadding: getValue(objects, "nodes", "nodePadding", defaultSettings.nodes.nodePadding)
+            nodePadding: getValue(objects, "nodes", "nodePadding", defaultSettings.nodes.nodePadding),
+            sortBy: getValue(objects, "nodes", "sortBy", defaultSettings.nodes.sortBy)
         },
         labels: {
             show: getValue(objects, "labels", "show", defaultSettings.labels.show),
@@ -157,7 +160,8 @@ export function enumerateSettingsInstances(settings: VisualSettings, options: En
                 objectName: "nodes",
                 properties: {
                     nodeWidth: settings.nodes.nodeWidth,
-                    nodePadding: settings.nodes.nodePadding
+                    nodePadding: settings.nodes.nodePadding,
+                    sortBy: settings.nodes.sortBy
                 },
                 selector: null
             } as VisualObjectInstance];

@@ -1,7 +1,7 @@
 {
   "name": "visual",
   "description": "default_template_value",
-  "version": "1.0.0.0",
+  "version": "2.0.0.0",
   "repository": {
     "type": "default_template_value",
     "url": "default_template_value"
@@ -18,8 +18,7 @@
     "@types/d3-sankey": "0.12.4",
     "d3": "7.9.0",
     "d3-sankey": "0.12.3",
-    "powerbi-visuals-api": "5.2.0",
-    "powerbi-visuals-utils-formattingmodel": "6.0.4"
+    "powerbi-visuals-api": "3.8.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.8.0",

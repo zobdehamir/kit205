@@ -1,9 +1,8 @@
 "use strict";
 
 import powerbi from "powerbi-visuals-api";
-import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import * as d3 from "d3";
-import { sankey, sankeyLinkHorizontal, sankeyJustify, SankeyNode as SankeySankeyNode, SankeyLink as SankeySankeyLink, SankeyExtraProperties } from "d3-sankey";
+import { sankey, sankeyLinkHorizontal, SankeyNode as SankeySankeyNode, SankeyLink as SankeySankeyLink, SankeyExtraProperties } from "d3-sankey";
 
 import "./../style/visual.less";
 
@@ -14,8 +13,10 @@ import IVisualHost = powerbi.extensibility.visual.IVisualHost;
 import IVisualEventService = powerbi.extensibility.IVisualEventService;
 import ISelectionManager = powerbi.extensibility.ISelectionManager;
 import ITooltipService = powerbi.extensibility.ITooltipService;
+import EnumerateVisualObjectInstancesOptions = powerbi.EnumerateVisualObjectInstancesOptions;
+import VisualObjectInstanceEnumeration = powerbi.VisualObjectInstanceEnumeration;
 
-import { VisualFormattingSettingsModel } from "./settings";
+import { VisualSettings, defaultSettings, parseSettings, enumerateSettingsInstances } from "./settings";
 import { convertDataView, SankeyNode, SankeyLink } from "./sankeyDataView";
 
 type Selection<T extends d3.BaseType> = d3.Selection<T, unknown, null, undefined>;
@@ -49,8 +50,7 @@ export class Visual implements IVisual {
     private stageHeadersGroup: Selection<SVGGElement>;
     private landingPage: Selection<HTMLDivElement>;
 
-    private formattingSettings: VisualFormattingSettingsModel;
-    private formattingSettingsService: FormattingSettingsService;
+    private settings: VisualSettings;
     private allowInteractions: boolean;
 
     constructor(options: VisualConstructorOptions) {
@@ -58,7 +58,7 @@ export class Visual implements IVisual {
         this.events = options.host.eventService;
         this.selectionManager = options.host.createSelectionManager();
         this.tooltipService = options.host.tooltipService;
-        this.formattingSettingsService = new FormattingSettingsService();
+        this.settings = defaultSettings;
         this.target = options.element;
         this.allowInteractions = options.host.hostCapabilities.allowInteractions !== false;
 
@@ -99,7 +99,7 @@ export class Visual implements IVisual {
 
         try {
             const dataView: powerbi.DataView = options.dataViews && options.dataViews[0];
-            this.formattingSettings = this.formattingSettingsService.populateFormattingSettingsModel(VisualFormattingSettingsModel, dataView);
+            this.settings = parseSettings(dataView);
 
             const width: number = Math.max(0, options.viewport.width);
             const height: number = Math.max(0, options.viewport.height);
@@ -111,10 +111,7 @@ export class Visual implements IVisual {
             this.svg.attr("width", width).attr("height", height);
             this.landingPage.style("width", `${width}px`).style("height", `${height}px`);
 
-            const defaultColor: string = this.formattingSettings.dataPointCard.defaultColor.value.value;
-            const colorByCategory: boolean = this.formattingSettings.dataPointCard.colorByCategory.value;
-
-            const { nodes, links, stageLabels } = convertDataView(dataView, this.host, defaultColor, colorByCategory);
+            const { nodes, links, stageLabels } = convertDataView(dataView, this.host, this.settings.dataPoint.defaultColor, this.settings.dataPoint.colorByCategory);
 
             this.render(nodes, links, stageLabels, width, height);
 
@@ -135,23 +132,23 @@ export class Visual implements IVisual {
             return;
         }
 
-        const nodeWidth: number = Math.max(1, this.formattingSettings.nodesCard.nodeWidth.value);
-        const nodePadding: number = Math.max(0, this.formattingSettings.nodesCard.nodePadding.value);
-        const showLabels: boolean = this.formattingSettings.labelsCard.show.value;
-        const showValue: boolean = this.formattingSettings.labelsCard.showValue.value;
-        const labelFontSize: number = this.formattingSettings.labelsCard.fontSize.value;
-        const colorMode: string = this.formattingSettings.linksCard.colorMode.value.value as string;
-        const uniformLinkColor: string = this.formattingSettings.linksCard.fill.value.value;
-        const linkOpacity: number = this.formattingSettings.linksCard.linkOpacity.value / 100;
+        const nodeWidth: number = Math.max(1, this.settings.nodes.nodeWidth);
+        const nodePadding: number = Math.max(0, this.settings.nodes.nodePadding);
+        const showLabels: boolean = this.settings.labels.show;
+        const showValue: boolean = this.settings.labels.showValue;
+        const labelFontSize: number = this.settings.labels.fontSize;
+        const colorMode: string = this.settings.links.colorMode;
+        const uniformLinkColor: string = this.settings.links.fill;
+        const linkOpacity: number = Math.min(100, Math.max(5, this.settings.links.linkOpacity)) / 100;
 
         const colorPalette = this.host.colorPalette;
         const isHighContrast: boolean = colorPalette.isHighContrast;
         const nodeStrokeColor: string = isHighContrast ? colorPalette.background.value : "#ffffff";
-        const labelColorFinal: string = isHighContrast ? colorPalette.foreground.value : this.formattingSettings.labelsCard.color.value.value;
+        const labelColorFinal: string = isHighContrast ? colorPalette.foreground.value : this.settings.labels.color;
 
-        const showStageHeaders: boolean = this.formattingSettings.stageHeadersCard.show.value && stageLabels.length > 1;
-        const stageHeaderColor: string = isHighContrast ? colorPalette.foreground.value : this.formattingSettings.stageHeadersCard.color.value.value;
-        const stageHeaderFontSize: number = this.formattingSettings.stageHeadersCard.fontSize.value;
+        const showStageHeaders: boolean = this.settings.stageHeaders.show && stageLabels.length > 1;
+        const stageHeaderColor: string = isHighContrast ? colorPalette.foreground.value : this.settings.stageHeaders.color;
+        const stageHeaderFontSize: number = this.settings.stageHeaders.fontSize;
         const headerHeight: number = showStageHeaders ? stageHeaderFontSize + 10 : 0;
 
         const layoutNodes: LayoutNode[] = nodes.map(node => ({
@@ -376,7 +373,7 @@ export class Visual implements IVisual {
     private updateSelectionStyles(): void {
         const selectionManager = this.selectionManager;
         const hasSelection: boolean = selectionManager.hasSelection();
-        const linkOpacity: number = this.formattingSettings.linksCard.linkOpacity.value / 100;
+        const linkOpacity: number = Math.min(100, Math.max(5, this.settings.links.linkOpacity)) / 100;
 
         this.linksGroup.selectAll<SVGPathElement, LayoutLink>("path.link")
             .attr("stroke-opacity", d => hasSelection && !selectionManager.getSelectionIds().some((id: powerbi.visuals.ISelectionId) => id.equals(d.selectionId)) ? linkOpacity * 0.3 : linkOpacity);
@@ -386,10 +383,11 @@ export class Visual implements IVisual {
     }
 
     /**
-     * Returns properties pane formatting model content hierarchies, properties and latest formatting values, Then populate properties pane.
-     * This method is called once every time we open properties pane or when the user edit any format property.
+     * Classic (pre-formatting-model) property pane enumeration. Used instead of
+     * getFormattingModel so the visual keeps working on older visual hosts
+     * (e.g. Power BI Report Server / Report Builder).
      */
-    public getFormattingModel(): powerbi.visuals.FormattingModel {
-        return this.formattingSettingsService.buildFormattingModel(this.formattingSettings);
+    public enumerateObjectInstances(options: EnumerateVisualObjectInstancesOptions): VisualObjectInstanceEnumeration {
+        return enumerateSettingsInstances(this.settings, options);
     }
 }

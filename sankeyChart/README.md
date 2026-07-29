@@ -10,16 +10,33 @@ release** as well as later Report Server releases and Power BI Desktop/Service.
 ## Compatibility
 
 The January 2023 release of Power BI Report Server (build `1.16.8420.13742`)
-ships with **custom visuals API v5.2.0**. Power BI hosts only load visuals
-whose declared `apiVersion` is less than or equal to the API version the host
-supports, so this project pins:
+*lists* custom visuals API v5.2.0 in its changelog, but in practice its
+visual host does not reliably render visuals that use the modern
+**Formatting Model** API (`getFormattingModel()` / API 5.1.0+) for the
+properties/format pane — visuals built that way can fail to render at all,
+showing "This content is blocked. Contact the site owner to fix the issue."
+in place of the visual. This was confirmed by decompiling a known-working
+community visual (Hierarchy Slicer) side by side with an earlier build of
+this one: the working visual targets `apiVersion 3.2.0` and the older
+`enumerateObjectInstances()` property pane pattern, with none of the
+FormattingModel machinery in its bundle.
 
-- `pbiviz.json` → `"apiVersion": "5.2.0"`
-- `package.json` → `"powerbi-visuals-api": "5.2.0"`
+To match that proven-compatible shape, this project targets:
 
-Do not bump `apiVersion` above `5.2.0` unless you no longer need to support
-the January 2023 Report Server release (later Report Server releases support
-higher API versions — see the [Report Server changelog](https://learn.microsoft.com/en-us/power-bi/report-server/changelog)).
+- `pbiviz.json` → `"apiVersion": "3.8.0"` (a mature, widely-supported API
+  version — supported since the September 2021 Report Server release —
+  that still has selection, tooltips, context menu, high contrast, and
+  `hostCapabilities.allowInteractions`, but predates the Formatting Model)
+- `package.json` → `"powerbi-visuals-api": "3.8.0"`
+- `src/settings.ts` implements the classic `enumerateObjectInstances()`
+  pane instead of `getFormattingModel()` — see `parseSettings` /
+  `enumerateSettingsInstances`
+
+Don't reintroduce `powerbi-visuals-utils-formattingmodel` / `getFormattingModel()`
+if Report Server / Report Builder compatibility matters — that's what caused
+the blocked-content symptom in the first place. If you only need to target
+Power BI Desktop/Service (not Report Server), the modern Formatting Model
+API and a higher `apiVersion` work fine there.
 
 The visual's bundled JS/CSS is fully self-contained — no `eval`, no dynamic
 `import()`, no calls to any external host. It does not reach out to
@@ -89,22 +106,31 @@ by a server administrator.
 
 ## Troubleshooting: "This content is blocked. Contact the site owner to fix the issue."
 
-This message is **not** produced by this visual — it comes from *Power BI
-Desktop optimized for Power BI Report Server* itself, which tries to reach
-`https://pbivisuals.powerbi.com` to check for an updated copy of any custom
-visual it loads. On a locked-down or fully offline network, that request is
-blocked and the visual area shows this message instead of rendering (see
-Microsoft's [Report Server custom-visuals troubleshooting doc](https://learn.microsoft.com/en-us/power-bi/report-server/custom-visuals-troubleshoot)).
+Two known causes, in order of likelihood:
 
-If you're running everything locally with no general internet egress:
+1. **Formatting Model API incompatibility (the actual cause found for this
+   visual).** Report Server / Report Builder's visual host doesn't reliably
+   render visuals that implement `getFormattingModel()` (API 5.1.0+) —
+   the visual can fail to render entirely with this exact message. Fix:
+   target `apiVersion` ≤ `3.8.0` and implement `enumerateObjectInstances()`
+   instead, as this project now does (see Compatibility above). If you're
+   evaluating a different/third-party visual and hit this, check whether it
+   was built against an API ≥ 5.1.0 with a formatting-model-based pane.
 
-- Set the environment variable `PBI_userFavoriteResourcePackagesEnabled=0`
-  on the machine running Desktop for Report Server. It skips the online
-  check and falls back to the locally-uploaded `.pbiviz` copy (after a
-  ~20–30s delay the first time).
-- Alternatively, allow outbound HTTPS to `https://pbivisuals.powerbi.com` if
-  the machine does have internet access but it's firewalled.
+2. **Blocked network egress.** *Power BI Desktop optimized for Power BI
+   Report Server* tries to reach `https://pbivisuals.powerbi.com` to check
+   for an updated copy of any custom visual it loads. On a locked-down or
+   fully offline network, that request is blocked and the visual area can
+   show this same message (see Microsoft's [Report Server custom-visuals
+   troubleshooting doc](https://learn.microsoft.com/en-us/power-bi/report-server/custom-visuals-troubleshoot)).
+   If you're running everything locally with no general internet egress:
+   - Set the environment variable `PBI_userFavoriteResourcePackagesEnabled=0`
+     on the machine running Desktop for Report Server, to skip the online
+     check and fall back to the locally-uploaded `.pbiviz` copy.
+   - Or allow outbound HTTPS to `https://pbivisuals.powerbi.com` if the
+     machine does have (firewalled) internet access.
 
-You can verify it's this environment-level behavior and not a problem with
-the visual itself by adding any other custom visual to the same report —
-it will show the same blocked message if this is the cause.
+To tell them apart: if a *different*, independently-sourced custom visual
+(e.g. one already published on AppSource/GitHub) renders fine in the same
+report, the problem is specific to the failing visual's build (cause 1). If
+*every* custom visual fails the same way, it's environment/network (cause 2).

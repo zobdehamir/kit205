@@ -153,15 +153,12 @@
     ],
     "tooltips": {
         "supportedTypes": {
-            "default": true,
-            "canvas": true
+            "default": true
         },
         "roles": [
             "key",
             "stage",
             "location"
         ]
-    },
-    "supportsMultiVisualSelection": true,
-    "privileges": []
+    }
 }

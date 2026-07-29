@@ -97,30 +97,54 @@ export class Visual implements IVisual {
     public update(options: VisualUpdateOptions) {
         this.events.renderingStarted(options);
 
+        const width: number = Math.max(0, options.viewport.width);
+        const height: number = Math.max(0, options.viewport.height);
+
         try {
             const dataView: powerbi.DataView = options.dataViews && options.dataViews[0];
             this.settings = parseSettings(dataView);
 
-            const width: number = Math.max(0, options.viewport.width);
-            const height: number = Math.max(0, options.viewport.height);
-
-            const hasData: boolean = !!(dataView && dataView.table && dataView.table.rows && dataView.table.rows.length);
-            this.landingPage.style("display", hasData ? "none" : "flex");
-            this.svg.style("display", hasData ? "block" : "none");
-
             this.svg.attr("width", width).attr("height", height);
             this.landingPage.style("width", `${width}px`).style("height", `${height}px`);
 
+            const hasRows: boolean = !!(dataView && dataView.table && dataView.table.rows && dataView.table.rows.length);
+
+            if (!hasRows) {
+                this.showMessage("Add Key, Stage and Location fields to build the Sankey diagram.");
+                this.render([], [], [], width, height);
+                this.events.renderingFinished(options);
+                return;
+            }
+
             const { nodes, links, stageLabels } = convertDataView(dataView, this.host, this.settings.dataPoint.defaultColor, this.settings.dataPoint.colorByCategory);
 
+            if (!nodes.length || !links.length) {
+                this.showMessage("No transitions to show. Each Key needs rows for at least two different Stage values, with matching Key/Stage/Location text in every row.");
+                this.render([], [], [], width, height);
+                this.events.renderingFinished(options);
+                return;
+            }
+
+            this.showMessage(null);
             this.render(nodes, links, stageLabels, width, height);
 
             this.events.renderingFinished(options);
         }
         catch (error) {
             console.log("Error in update method", error);
+            this.showMessage(`This visual hit an error while rendering: ${String(error)}`);
             this.events.renderingFailed(options, String(error));
         }
+    }
+
+    private showMessage(message: string | null): void {
+        if (message === null) {
+            this.landingPage.style("display", "none");
+            this.svg.style("display", "block");
+            return;
+        }
+        this.landingPage.style("display", "flex").text(message);
+        this.svg.style("display", "none");
     }
 
     private render(nodes: SankeyNode[], links: SankeyLink[], stageLabels: string[], width: number, height: number): void {

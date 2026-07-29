@@ -132,8 +132,11 @@
             }
         },
         "sorting": {
+            "displayName": "Sorting",
             "properties": {
                 "stageOrder": {
+                    "displayName": "Stage order",
+                    "description": "Left-to-right stage order, comma-separated, e.g. \"a, b, c\". Leave blank to use Power BI's default order.",
                     "type": {
                         "text": true
                     }
@@ -155,7 +158,7 @@
                     ],
                     "dataReductionAlgorithm": {
                         "top": {
-                            "count": 30000
+                            "count": 150000
                         }
                     }
                 }

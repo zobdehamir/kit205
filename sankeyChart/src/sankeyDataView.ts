@@ -43,24 +43,27 @@ function formatValue(value: PrimitiveValue): string {
     if (value instanceof Date) {
         return value.toISOString();
     }
-    return String(value);
+    return String(value).trim();
 }
 
 /**
- * Orders stage values numerically when every value parses as a number,
- * otherwise falls back to a natural (numeric-aware) string sort so labels
- * like "Stage 2" sort before "Stage 10".
+ * Resolves a raw value to a canonical display string, merging values that
+ * only differ by case/whitespace (e.g. "Arrival" and "arrival ") into a
+ * single canonical label — the text as first encountered — so inconsistent
+ * source data doesn't fragment into lookalike duplicate stages/locations.
  */
-function compareStageValues(a: PrimitiveValue, b: PrimitiveValue): number {
-    if (a instanceof Date && b instanceof Date) {
-        return a.getTime() - b.getTime();
+function canonicalize(canonicalByNormalizedKey: Map<string, string>, raw: PrimitiveValue): string {
+    const display: string = formatValue(raw);
+    if (!display) {
+        return "";
     }
-    const aNum: number = typeof a === "number" ? a : Number(a);
-    const bNum: number = typeof b === "number" ? b : Number(b);
-    if (a !== null && a !== "" && b !== null && b !== "" && !isNaN(aNum) && !isNaN(bNum)) {
-        return aNum - bNum;
+    const normalizedKey: string = display.toLowerCase();
+    let canonical: string = canonicalByNormalizedKey.get(normalizedKey);
+    if (canonical === undefined) {
+        canonical = display;
+        canonicalByNormalizedKey.set(normalizedKey, canonical);
     }
-    return formatValue(a).localeCompare(formatValue(b), undefined, { numeric: true, sensitivity: "base" });
+    return canonical;
 }
 
 interface KeyStageEntry {
@@ -70,15 +73,15 @@ interface KeyStageEntry {
 }
 
 /**
- * Builds the final, ordered list of stage labels. If the user supplied an
- * explicit comma/newline-separated order (for stage names with no natural
- * numeric or alphabetical sequence, e.g. "Arrival, Sale, Dispatch"), that
- * order wins; any stage value present in the data but missing from the
+ * Builds the final, ordered list of stage labels. `defaultOrder` is the
+ * order stages were first encountered in the DataView's own row order
+ * (Power BI's natural/default sort for the field). If the user supplied an
+ * explicit comma/newline-separated override (for stage names with no
+ * natural sequence, e.g. "Arrival, Sale, Dispatch"), that order wins
+ * instead; any stage value present in the data but missing from the
  * override is appended at the end so it's never silently dropped.
  */
-function buildStageOrder(rawStageValues: PrimitiveValue[], stageOrderOverride: string): string[] {
-    const defaultOrder: string[] = rawStageValues.slice().sort(compareStageValues).map(formatValue);
-
+function buildStageOrder(defaultOrder: string[], stageOrderOverride: string): string[] {
     const overrideList: string[] = (stageOrderOverride || "")
         .split(/[,\n]/)
         .map(s => s.trim())
@@ -123,13 +126,17 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
         return EMPTY_DATA;
     }
 
-    // Determine the global, sorted list of distinct stages.
-    const stageRawByLabel = new Map<string, PrimitiveValue>();
+    // Canonicalize stage/location text (trim + case-insensitive merge) and
+    // capture stages in the order Power BI's DataView first delivers them,
+    // used as the default order when no explicit override is set.
+    const stageCanonicalByKey = new Map<string, string>();
+    const locationCanonicalByKey = new Map<string, string>();
     table.rows.forEach(row => {
-        const raw: PrimitiveValue = row[stageColumnIndex];
-        stageRawByLabel.set(formatValue(raw), raw);
+        canonicalize(stageCanonicalByKey, row[stageColumnIndex]);
     });
-    const stageLabels: string[] = buildStageOrder(Array.from(stageRawByLabel.values()), stageOrderOverride);
+    const defaultStageOrder: string[] = Array.from(stageCanonicalByKey.values());
+
+    const stageLabels: string[] = buildStageOrder(defaultStageOrder, stageOrderOverride);
     const stageIndexByLabel = new Map<string, number>();
     stageLabels.forEach((label, index) => stageIndexByLabel.set(label, index));
 
@@ -137,8 +144,8 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
     const entriesByKey = new Map<string, Map<number, KeyStageEntry>>();
     table.rows.forEach((row, rowIndex) => {
         const keyValue: string = formatValue(row[keyIndex]);
-        const locationValue: string = formatValue(row[locationIndex]);
-        const stageValue: string = formatValue(row[stageColumnIndex]);
+        const locationValue: string = canonicalize(locationCanonicalByKey, row[locationIndex]);
+        const stageValue: string = canonicalize(stageCanonicalByKey, row[stageColumnIndex]);
         const stageIdx: number = stageIndexByLabel.get(stageValue);
 
         if (!keyValue || !locationValue || stageIdx === undefined) {

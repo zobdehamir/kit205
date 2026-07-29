@@ -69,15 +69,25 @@ directly across the gap to wherever it next appears. Each **node** is a
 (Location, Stage) pair — so the same location shown at different stages
 becomes a separate column position — and each **link's weight is the number
 of distinct keys** making that exact transition. Duplicate Key+Stage rows
-collapse to a single location (last one wins); rows with a blank Key or
-Location are skipped.
+collapse to a single location (last one wins); rows with a blank Key are
+skipped. Stage and Location text is trimmed and merged case-insensitively
+(`"Arrival"`, `"arrival "`, and `"ARRIVAL"` are treated as the same stage,
+keeping whichever casing appeared first), so inconsistent source data
+doesn't fragment into lookalike duplicate columns.
 
-Stage values are sorted numerically if every value parses as a number,
-otherwise with a natural (numeric-aware) string sort, so `"Stage 2"` sorts
-before `"Stage 10"`. **If your stage names are text with no natural
-sequence** (e.g. `Arrival`, `Sale`, `Dispatch`, `Stock take`), the fallback
-alphabetical sort will almost certainly be wrong — set an explicit order in
-**Format visual → Sorting → Stage order** (see below).
+By default, stages are ordered exactly as Power BI's DataView returns them
+(its natural/default order for the field — e.g. following a "Sort by
+Column" set on the Stage field in your data model, or plain alphabetical if
+none is set). If that default doesn't match your real process order — text
+names like `Arrival`, `Sale`, `Dispatch` rarely sort the way you want —
+set an explicit order in **Format visual → Sorting → Stage order**, e.g.
+`Arrival, Sale, Dispatch, Stock take`. Leave it blank to fall back to
+Power BI's default order.
+
+The table's row cap (`dataReductionAlgorithm.top.count` in `capabilities.json`)
+is set to 150,000. If you have more raw Key/Stage/Location rows than that,
+increase it there and rebuild — rows beyond the cap are silently dropped by
+Power BI before the visual ever sees them.
 
 ## Formatting options
 
@@ -88,7 +98,7 @@ alphabetical sort will almost certainly be wrong — set an explicit order in
 - **Sorting → Stage order** – optional comma-separated list giving the exact left-to-right
   stage sequence, e.g. `Arrival, Sale, Dispatch, Stock take`. Any stage value present in the
   data but missing from this list is appended at the end (nothing is dropped). Leave blank to
-  use the numeric/alphabetical fallback.
+  use Power BI's default order for the field.
 - **Stage headers** – show/hide the stage-name row above each column, text color, text size
 
 ## Build

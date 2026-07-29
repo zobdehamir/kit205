@@ -107,6 +107,15 @@ Power BI before the visual ever sees them.
   use Power BI's default order for the field.
 - **Stage headers** – show/hide the stage-name row above each column, text color, text size
 
+## Vertical scrolling
+
+If a stage column has more locations than can fit at a readable size in the
+available height, the chart grows taller than the visual's viewport (each
+node gets at least a small minimum height, scaling with node padding) and
+the visual becomes vertically scrollable instead of squeezing everything
+down to illegible slivers. The chart never scrolls horizontally — width
+always matches the viewport.
+
 ## Build
 
 ```bash

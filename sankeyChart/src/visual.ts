@@ -43,6 +43,7 @@ export class Visual implements IVisual {
     private tooltipService: ITooltipService;
 
     private target: HTMLElement;
+    private scrollContainer: Selection<HTMLDivElement>;
     private svg: Selection<SVGSVGElement>;
     private linksGroup: Selection<SVGGElement>;
     private nodesGroup: Selection<SVGGElement>;
@@ -62,7 +63,11 @@ export class Visual implements IVisual {
         this.target = options.element;
         this.allowInteractions = options.host.hostCapabilities.allowInteractions !== false;
 
-        this.svg = d3.select(this.target)
+        this.scrollContainer = d3.select(this.target)
+            .append("div")
+            .attr("class", "sankeyScrollContainer");
+
+        this.svg = this.scrollContainer
             .append("svg")
             .attr("class", "sankeyChart");
 
@@ -104,7 +109,8 @@ export class Visual implements IVisual {
             const dataView: powerbi.DataView = options.dataViews && options.dataViews[0];
             this.settings = parseSettings(dataView);
 
-            this.svg.attr("width", width).attr("height", height);
+            this.scrollContainer.style("width", `${width}px`).style("height", `${height}px`);
+            this.svg.attr("width", width);
             this.landingPage.style("width", `${width}px`).style("height", `${height}px`);
 
             const hasRows: boolean = !!(dataView && dataView.table && dataView.table.rows && dataView.table.rows.length);
@@ -153,6 +159,7 @@ export class Visual implements IVisual {
             this.nodesGroup.selectAll("*").remove();
             this.labelsGroup.selectAll("*").remove();
             this.stageHeadersGroup.selectAll("*").remove();
+            this.svg.attr("height", height);
             return;
         }
 
@@ -193,8 +200,20 @@ export class Visual implements IVisual {
         const sideLabelMargin: number = showLabels ? Math.max(50, labelFontSize * 7) : 4;
         const margin = { top: 4 + headerHeight, right: sideLabelMargin, bottom: 4, left: sideLabelMargin };
         const innerWidth: number = Math.max(1, width - margin.left - margin.right);
-        const innerHeight: number = Math.max(1, height - margin.top - margin.bottom);
+        const availableContentHeight: number = Math.max(1, height - margin.top - margin.bottom);
         const stageCount: number = stageLabels.length;
+
+        // Ensure every column has at least a minimally readable node height:
+        // if the busiest column can't fit that within the viewport, grow the
+        // SVG taller than the viewport and let the scroll container scroll.
+        const nodesPerStage = new Map<number, number>();
+        nodes.forEach(node => nodesPerStage.set(node.stageIndex, (nodesPerStage.get(node.stageIndex) || 0) + 1));
+        const maxNodesInColumn: number = Math.max(1, ...Array.from(nodesPerStage.values()));
+        const minNodeHeight = 4;
+        const requiredContentHeight: number = maxNodesInColumn * minNodeHeight + Math.max(0, maxNodesInColumn - 1) * nodePadding;
+        const contentHeight: number = Math.max(availableContentHeight, requiredContentHeight);
+
+        this.svg.attr("height", contentHeight + margin.top + margin.bottom);
 
         const nodeSortBy: string = this.settings.nodes.sortBy;
         const nodeSortComparator: (a: LayoutNode, b: LayoutNode) => number = nodeSortBy === "weight"
@@ -207,7 +226,7 @@ export class Visual implements IVisual {
             .nodeWidth(nodeWidth)
             .nodePadding(nodePadding)
             .nodeAlign((node: LayoutNode) => stageCount > 1 ? node.stageIndex : 0)
-            .extent([[margin.left, margin.top], [innerWidth, innerHeight]]);
+            .extent([[margin.left, margin.top], [margin.left + innerWidth, margin.top + contentHeight]]);
 
         if (nodeSortComparator) {
             sankeyGenerator.nodeSort(nodeSortComparator);

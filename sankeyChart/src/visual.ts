@@ -22,6 +22,7 @@ type Selection<T extends d3.BaseType> = d3.Selection<T, unknown, null, undefined
 
 interface NodeExtraProps extends SankeyExtraProperties {
     name: string;
+    stageIndex: number;
     color: string;
     selectionId: powerbi.visuals.ISelectionId;
 }
@@ -45,6 +46,7 @@ export class Visual implements IVisual {
     private linksGroup: Selection<SVGGElement>;
     private nodesGroup: Selection<SVGGElement>;
     private labelsGroup: Selection<SVGGElement>;
+    private stageHeadersGroup: Selection<SVGGElement>;
     private landingPage: Selection<HTMLDivElement>;
 
     private formattingSettings: VisualFormattingSettingsModel;
@@ -67,12 +69,13 @@ export class Visual implements IVisual {
         this.linksGroup = this.svg.append("g").attr("class", "links");
         this.nodesGroup = this.svg.append("g").attr("class", "nodes");
         this.labelsGroup = this.svg.append("g").attr("class", "labels");
+        this.stageHeadersGroup = this.svg.append("g").attr("class", "stageHeaders");
 
         this.landingPage = d3.select(this.target)
             .append("div")
             .attr("class", "landingPage")
             .style("display", "none")
-            .text("Add Source, Destination and Weight fields to build the Sankey diagram.");
+            .text("Add Key, Stage and Location fields to build the Sankey diagram.");
 
         this.svg.on("click", () => {
             if (!this.allowInteractions) {
@@ -111,9 +114,9 @@ export class Visual implements IVisual {
             const defaultColor: string = this.formattingSettings.dataPointCard.defaultColor.value.value;
             const colorByCategory: boolean = this.formattingSettings.dataPointCard.colorByCategory.value;
 
-            const { nodes, links } = convertDataView(dataView, this.host, defaultColor, colorByCategory);
+            const { nodes, links, stageLabels } = convertDataView(dataView, this.host, defaultColor, colorByCategory);
 
-            this.render(nodes, links, width, height);
+            this.render(nodes, links, stageLabels, width, height);
 
             this.events.renderingFinished(options);
         }
@@ -123,11 +126,12 @@ export class Visual implements IVisual {
         }
     }
 
-    private render(nodes: SankeyNode[], links: SankeyLink[], width: number, height: number): void {
+    private render(nodes: SankeyNode[], links: SankeyLink[], stageLabels: string[], width: number, height: number): void {
         if (!nodes.length || !links.length || width <= 0 || height <= 0) {
             this.linksGroup.selectAll("*").remove();
             this.nodesGroup.selectAll("*").remove();
             this.labelsGroup.selectAll("*").remove();
+            this.stageHeadersGroup.selectAll("*").remove();
             return;
         }
 
@@ -145,8 +149,14 @@ export class Visual implements IVisual {
         const nodeStrokeColor: string = isHighContrast ? colorPalette.background.value : "#ffffff";
         const labelColorFinal: string = isHighContrast ? colorPalette.foreground.value : this.formattingSettings.labelsCard.color.value.value;
 
+        const showStageHeaders: boolean = this.formattingSettings.stageHeadersCard.show.value && stageLabels.length > 1;
+        const stageHeaderColor: string = isHighContrast ? colorPalette.foreground.value : this.formattingSettings.stageHeadersCard.color.value.value;
+        const stageHeaderFontSize: number = this.formattingSettings.stageHeadersCard.fontSize.value;
+        const headerHeight: number = showStageHeaders ? stageHeaderFontSize + 10 : 0;
+
         const layoutNodes: LayoutNode[] = nodes.map(node => ({
             name: node.name,
+            stageIndex: node.stageIndex,
             color: node.color,
             selectionId: node.selectionId
         }));
@@ -159,14 +169,15 @@ export class Visual implements IVisual {
             tooltipInfo: link.tooltipInfo
         }));
 
-        const margin = { top: 4, right: 4, bottom: 4, left: 4 };
+        const margin = { top: 4 + headerHeight, right: 4, bottom: 4, left: 4 };
         const innerWidth: number = Math.max(1, width - margin.left - margin.right);
         const innerHeight: number = Math.max(1, height - margin.top - margin.bottom);
+        const stageCount: number = stageLabels.length;
 
         const sankeyGenerator = sankey<NodeExtraProps, LinkExtraProps>()
             .nodeWidth(nodeWidth)
             .nodePadding(nodePadding)
-            .nodeAlign(sankeyJustify)
+            .nodeAlign((node: LayoutNode) => stageCount > 1 ? node.stageIndex : 0)
             .extent([[margin.left, margin.top], [innerWidth, innerHeight]]);
 
         let graph: { nodes: LayoutNode[]; links: LayoutLink[] };
@@ -182,6 +193,7 @@ export class Visual implements IVisual {
             this.linksGroup.selectAll("*").remove();
             this.nodesGroup.selectAll("*").remove();
             this.labelsGroup.selectAll("*").remove();
+            this.stageHeadersGroup.selectAll("*").remove();
             return;
         }
 
@@ -285,8 +297,9 @@ export class Visual implements IVisual {
                     coordinates: [event.offsetX, event.offsetY],
                     isTouchEvent: false,
                     dataItems: [
-                        { displayName: "Node", value: d.name },
-                        { displayName: "Total", value: String(d.value) }
+                        { displayName: "Location", value: d.name },
+                        { displayName: "Stage", value: stageLabels[d.stageIndex] ?? "" },
+                        { displayName: "Keys", value: String(d.value) }
                     ],
                     identities: [d.selectionId]
                 });
@@ -318,13 +331,46 @@ export class Visual implements IVisual {
             .attr("class", "label");
 
         labelEnter.merge(labelSelection)
-            .attr("x", d => (d.x0 < innerWidth / 2 ? d.x1 + 6 : d.x0 - 6))
-            .attr("y", d => (d.y0 + d.y1) / 2)
-            .attr("dy", "0.35em")
-            .attr("text-anchor", d => (d.x0 < innerWidth / 2 ? "start" : "end"))
+            .attr("x", d => (d.x0 + d.x1) / 2)
+            .attr("y", d => d.y0 - 4)
+            .attr("text-anchor", "middle")
             .style("fill", labelColorFinal)
             .style("font-size", `${labelFontSize}px`)
             .text(d => showValue ? `${d.name} (${d.value})` : d.name);
+
+        const stageColumns = new Map<number, { x0: number; x1: number }>();
+        graph.nodes.forEach(node => {
+            if (!stageColumns.has(node.stageIndex)) {
+                stageColumns.set(node.stageIndex, { x0: node.x0, x1: node.x1 });
+            }
+        });
+        const stageHeaderData: Array<{ label: string; x0: number; x1: number }> = showStageHeaders
+            ? stageLabels
+                .map((label, index) => {
+                    const column = stageColumns.get(index);
+                    return column ? { label, x0: column.x0, x1: column.x1 } : undefined;
+                })
+                .filter((d): d is { label: string; x0: number; x1: number } => d !== undefined)
+            : [];
+
+        type StageHeaderDatum = { label: string; x0: number; x1: number };
+        const stageHeaderSelection = this.stageHeadersGroup.selectAll<SVGTextElement, StageHeaderDatum>("text.stageHeader")
+            .data(stageHeaderData, (d: StageHeaderDatum) => d.label);
+
+        stageHeaderSelection.exit().remove();
+
+        const stageHeaderEnter = stageHeaderSelection.enter()
+            .append("text")
+            .attr("class", "stageHeader");
+
+        stageHeaderEnter.merge(stageHeaderSelection)
+            .attr("x", d => (d.x0 + d.x1) / 2)
+            .attr("y", margin.top - headerHeight + stageHeaderFontSize)
+            .attr("text-anchor", "middle")
+            .style("fill", stageHeaderColor)
+            .style("font-size", `${stageHeaderFontSize}px`)
+            .style("font-weight", "600")
+            .text(d => d.label);
     }
 
     private updateSelectionStyles(): void {

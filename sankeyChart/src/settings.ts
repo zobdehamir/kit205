@@ -21,7 +21,7 @@ class DataPointCardSettings extends FormattingSettingsCard {
 
     colorByCategory = new formattingSettings.ToggleSwitch({
         name: "colorByCategory",
-        displayName: "Color nodes by category",
+        displayName: "Color nodes by location",
         value: true
     });
 
@@ -122,6 +122,34 @@ class LabelsCardSettings extends FormattingSettingsCard {
 }
 
 /**
+ * Stage headers formatting card
+ */
+class StageHeadersCardSettings extends FormattingSettingsCard {
+    show = new formattingSettings.ToggleSwitch({
+        name: "show",
+        displayName: "Show stage headers",
+        value: true
+    });
+
+    color = new formattingSettings.ColorPicker({
+        name: "color",
+        displayName: "Text color",
+        value: { value: "#605E5C" }
+    });
+
+    fontSize = new formattingSettings.NumUpDown({
+        name: "fontSize",
+        displayName: "Text size",
+        value: 11
+    });
+
+    name: string = "stageHeaders";
+    displayName: string = "Stage headers";
+    topLevelSlice: formattingSettings.ToggleSwitch = this.show;
+    slices: Array<FormattingSettingsSlice> = [this.color, this.fontSize];
+}
+
+/**
  * Visual settings model class
  */
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
@@ -129,6 +157,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     linksCard = new LinksCardSettings();
     nodesCard = new NodesCardSettings();
     labelsCard = new LabelsCardSettings();
+    stageHeadersCard = new StageHeadersCardSettings();
 
-    cards = [this.dataPointCard, this.linksCard, this.nodesCard, this.labelsCard];
+    cards = [this.dataPointCard, this.linksCard, this.nodesCard, this.labelsCard, this.stageHeadersCard];
 }

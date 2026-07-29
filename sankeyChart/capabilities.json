@@ -1,19 +1,19 @@
 {
     "dataRoles": [
         {
-            "displayName": "Source",
-            "name": "source",
+            "displayName": "Key",
+            "name": "key",
             "kind": "Grouping"
         },
         {
-            "displayName": "Destination",
-            "name": "destination",
+            "displayName": "Stage",
+            "name": "stage",
             "kind": "Grouping"
         },
         {
-            "displayName": "Weight",
-            "name": "weight",
-            "kind": "Measure"
+            "displayName": "Location",
+            "name": "location",
+            "kind": "Grouping"
         }
     ],
     "objects": {
@@ -54,7 +54,7 @@
                 "colorMode": {
                     "type": {
                         "enumeration": [
-                            { "value": "source", "displayName": "Source color" },
+                            { "value": "source", "displayName": "Source location color" },
                             { "value": "gradient", "displayName": "Source-target gradient" },
                             { "value": "uniform", "displayName": "Single color" }
                         ]
@@ -105,19 +105,44 @@
                     }
                 }
             }
+        },
+        "stageHeaders": {
+            "properties": {
+                "show": {
+                    "type": {
+                        "bool": true
+                    }
+                },
+                "color": {
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                },
+                "fontSize": {
+                    "type": {
+                        "formatting": {
+                            "fontSize": true
+                        }
+                    }
+                }
+            }
         }
     },
     "dataViewMappings": [
         {
             "conditions": [
-                { "source": { "max": 1 }, "destination": { "max": 1 }, "weight": { "max": 1 } }
+                { "key": { "max": 1 }, "stage": { "max": 1 }, "location": { "max": 1 } }
             ],
             "table": {
                 "rows": {
                     "select": [
-                        { "for": { "in": "source" } },
-                        { "for": { "in": "destination" } },
-                        { "bind": { "to": "weight" } }
+                        { "for": { "in": "key" } },
+                        { "for": { "in": "stage" } },
+                        { "for": { "in": "location" } }
                     ],
                     "dataReductionAlgorithm": {
                         "top": {}
@@ -132,9 +157,9 @@
             "canvas": true
         },
         "roles": [
-            "source",
-            "destination",
-            "weight"
+            "key",
+            "stage",
+            "location"
         ]
     },
     "supportsMultiVisualSelection": true,

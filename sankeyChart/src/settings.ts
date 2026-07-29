@@ -35,6 +35,9 @@ export interface VisualSettings {
         color: string;
         fontSize: number;
     };
+    sorting: {
+        stageOrder: string;
+    };
 }
 
 export const defaultSettings: VisualSettings = {
@@ -61,6 +64,9 @@ export const defaultSettings: VisualSettings = {
         show: true,
         color: "#605E5C",
         fontSize: 11
+    },
+    sorting: {
+        stageOrder: ""
     }
 };
 
@@ -112,6 +118,9 @@ export function parseSettings(dataView: DataView): VisualSettings {
             show: getValue(objects, "stageHeaders", "show", defaultSettings.stageHeaders.show),
             color: getFillValue(objects, "stageHeaders", "color", defaultSettings.stageHeaders.color),
             fontSize: getValue(objects, "stageHeaders", "fontSize", defaultSettings.stageHeaders.fontSize)
+        },
+        sorting: {
+            stageOrder: getValue(objects, "sorting", "stageOrder", defaultSettings.sorting.stageOrder)
         }
     };
 }
@@ -170,6 +179,14 @@ export function enumerateSettingsInstances(settings: VisualSettings, options: En
                     show: settings.stageHeaders.show,
                     color: { solid: { color: settings.stageHeaders.color } },
                     fontSize: settings.stageHeaders.fontSize
+                },
+                selector: null
+            } as VisualObjectInstance];
+        case "sorting":
+            return [{
+                objectName: "sorting",
+                properties: {
+                    stageOrder: settings.sorting.stageOrder
                 },
                 selector: null
             } as VisualObjectInstance];

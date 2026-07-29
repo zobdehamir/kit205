@@ -116,7 +116,7 @@ export class Visual implements IVisual {
                 return;
             }
 
-            const { nodes, links, stageLabels } = convertDataView(dataView, this.host, this.settings.dataPoint.defaultColor, this.settings.dataPoint.colorByCategory);
+            const { nodes, links, stageLabels } = convertDataView(dataView, this.host, this.settings.dataPoint.defaultColor, this.settings.dataPoint.colorByCategory, this.settings.sorting.stageOrder);
 
             if (!nodes.length || !links.length) {
                 this.showMessage("No transitions to show. Each Key needs rows for at least two different Stage values, with matching Key/Stage/Location text in every row.");

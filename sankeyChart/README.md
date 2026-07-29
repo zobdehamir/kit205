@@ -74,7 +74,10 @@ Location are skipped.
 
 Stage values are sorted numerically if every value parses as a number,
 otherwise with a natural (numeric-aware) string sort, so `"Stage 2"` sorts
-before `"Stage 10"`.
+before `"Stage 10"`. **If your stage names are text with no natural
+sequence** (e.g. `Arrival`, `Sale`, `Dispatch`, `Stock take`), the fallback
+alphabetical sort will almost certainly be wrong — set an explicit order in
+**Format visual → Sorting → Stage order** (see below).
 
 ## Formatting options
 
@@ -82,6 +85,10 @@ before `"Stage 10"`.
 - **Links** – link color mode (source location color / source-target gradient / single color), link opacity
 - **Nodes** – node width, node padding
 - **Labels** – show/hide, text color, text size, show key count alongside the location name
+- **Sorting → Stage order** – optional comma-separated list giving the exact left-to-right
+  stage sequence, e.g. `Arrival, Sale, Dispatch, Stock take`. Any stage value present in the
+  data but missing from this list is appended at the end (nothing is dropped). Leave blank to
+  use the numeric/alphabetical fallback.
 - **Stage headers** – show/hide the stage-name row above each column, text color, text size
 
 ## Build

@@ -70,13 +70,46 @@ interface KeyStageEntry {
 }
 
 /**
+ * Builds the final, ordered list of stage labels. If the user supplied an
+ * explicit comma/newline-separated order (for stage names with no natural
+ * numeric or alphabetical sequence, e.g. "Arrival, Sale, Dispatch"), that
+ * order wins; any stage value present in the data but missing from the
+ * override is appended at the end so it's never silently dropped.
+ */
+function buildStageOrder(rawStageValues: PrimitiveValue[], stageOrderOverride: string): string[] {
+    const defaultOrder: string[] = rawStageValues.slice().sort(compareStageValues).map(formatValue);
+
+    const overrideList: string[] = (stageOrderOverride || "")
+        .split(/[,\n]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
+    if (overrideList.length === 0) {
+        return defaultOrder;
+    }
+
+    const matched: string[] = [];
+    const seen = new Set<string>();
+    overrideList.forEach(label => {
+        const match: string = defaultOrder.find(d => d.toLowerCase() === label.toLowerCase() && !seen.has(d));
+        if (match) {
+            matched.push(match);
+            seen.add(match);
+        }
+    });
+
+    const remaining: string[] = defaultOrder.filter(d => !seen.has(d));
+    return [...matched, ...remaining];
+}
+
+/**
  * Converts long-format Key/Stage/Location rows (one row per key per stage)
  * into a multi-column Sankey graph: each (stage, location) pair becomes a
  * distinct node, and a link is drawn between a key's location at one stage
  * and its location at the next stage it appears in. Link value is the
  * number of distinct keys making that transition.
  */
-export function convertDataView(dataView: DataView, host: IVisualHost, defaultColor: string, colorByCategory: boolean): SankeyData {
+export function convertDataView(dataView: DataView, host: IVisualHost, defaultColor: string, colorByCategory: boolean, stageOrderOverride: string = ""): SankeyData {
     if (!dataView || !dataView.table || !dataView.table.rows || dataView.table.rows.length === 0) {
         return EMPTY_DATA;
     }
@@ -96,9 +129,7 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
         const raw: PrimitiveValue = row[stageColumnIndex];
         stageRawByLabel.set(formatValue(raw), raw);
     });
-    const stageLabels: string[] = Array.from(stageRawByLabel.values())
-        .sort(compareStageValues)
-        .map(formatValue);
+    const stageLabels: string[] = buildStageOrder(Array.from(stageRawByLabel.values()), stageOrderOverride);
     const stageIndexByLabel = new Map<string, number>();
     stageLabels.forEach((label, index) => stageIndexByLabel.set(label, index));
 

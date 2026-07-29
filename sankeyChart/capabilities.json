@@ -130,6 +130,15 @@
                     }
                 }
             }
+        },
+        "sorting": {
+            "properties": {
+                "stageOrder": {
+                    "type": {
+                        "text": true
+                    }
+                }
+            }
         }
     },
     "dataViewMappings": [

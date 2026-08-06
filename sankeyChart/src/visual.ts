@@ -206,10 +206,15 @@ export class Visual implements IVisual {
         // Ensure every column has at least a minimally readable node height:
         // if the busiest column can't fit that within the viewport, grow the
         // SVG taller than the viewport and let the scroll container scroll.
+        // The label text (when shown) is almost always the real crowding
+        // factor -- a bare node bar can be a couple of px tall with no
+        // visual problem, but labels overlap once rows get shorter than
+        // roughly the font size -- so the minimum row height must be driven
+        // by label font size, not just an arbitrary small bar height.
         const nodesPerStage = new Map<number, number>();
         nodes.forEach(node => nodesPerStage.set(node.stageIndex, (nodesPerStage.get(node.stageIndex) || 0) + 1));
         const maxNodesInColumn: number = Math.max(1, ...Array.from(nodesPerStage.values()));
-        const minNodeHeight = 4;
+        const minNodeHeight: number = showLabels ? Math.max(4, labelFontSize + 4) : 4;
         const requiredContentHeight: number = maxNodesInColumn * minNodeHeight + Math.max(0, maxNodesInColumn - 1) * nodePadding;
         const contentHeight: number = Math.max(availableContentHeight, requiredContentHeight);
 

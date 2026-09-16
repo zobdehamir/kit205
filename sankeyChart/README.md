@@ -151,6 +151,16 @@ default Include/Exclude menu, which has the same single-row limitation
 described above — let us know if you'd like the same custom Key-level
 filtering extended there too.
 
+## Clicking a node highlights every key that passes through it
+
+Clicking a node doesn't just highlight that one rectangle — it highlights
+every node and link belonging to any Key that passes through it, across
+*every* stage, not only the stages adjacent to the click. So clicking
+"Warehouse" at Stage 1 highlights every other location those same keys
+visited at Stage 2, Stage 3, and so on, while locations touched only by
+unrelated keys dim. Clicking the background, or the already-selected node
+again, clears the highlight.
+
 ## Safety limits on very large datasets
 
 Two guardrails keep an oversized dataset from rendering blank or freezing

@@ -34,6 +34,7 @@ interface NodeExtraProps extends SankeyExtraProperties {
 interface LinkExtraProps extends SankeyExtraProperties {
     selectionId: powerbi.visuals.ISelectionId;
     tooltipInfo: powerbi.extensibility.VisualTooltipDataItem[];
+    rawKeys: PrimitiveValue[];
 }
 
 type LayoutNode = SankeySankeyNode<NodeExtraProps, LinkExtraProps>;
@@ -63,6 +64,7 @@ export class Visual implements IVisual {
     private tooltipService: ITooltipService;
 
     private target: HTMLElement;
+    private wrapper: Selection<HTMLDivElement>;
     private scrollContainer: Selection<HTMLDivElement>;
     private svg: Selection<SVGSVGElement>;
     private linksGroup: Selection<SVGGElement>;
@@ -75,6 +77,8 @@ export class Visual implements IVisual {
     private excludeMenuItem: Selection<HTMLDivElement>;
 
     private settings: VisualSettings;
+    private lastGraphNodes: LayoutNode[] = [];
+    private lastGraphLinks: LayoutLink[] = [];
     private allowInteractions: boolean;
     private keyColumnTarget: FilterColumnTarget;
     private activeMenuRawKeys: PrimitiveValue[];
@@ -89,9 +93,22 @@ export class Visual implements IVisual {
         this.target = options.element;
         this.allowInteractions = options.host.hostCapabilities.allowInteractions !== false;
 
-        d3.select(this.target).style("position", "relative");
+        // Own wrapper for position:relative instead of touching options.element
+        // directly -- Power BI's host applies its own positioning (typically
+        // position:absolute) to the root element to place the visual on the
+        // report canvas, and overriding that with an inline style previously
+        // broke rendering (the scroll container's dimensions and scrollbar
+        // stopped working reliably in the real host). This wrapper gives the
+        // custom context menu a stable positioning context without touching
+        // anything Power BI itself manages.
+        this.wrapper = d3.select(this.target)
+            .append("div")
+            .attr("class", "sankeyVisualRoot")
+            .style("position", "relative")
+            .style("width", "100%")
+            .style("height", "100%");
 
-        this.scrollContainer = d3.select(this.target)
+        this.scrollContainer = this.wrapper
             .append("div")
             .attr("class", "sankeyScrollContainer");
 
@@ -104,7 +121,7 @@ export class Visual implements IVisual {
         this.labelsGroup = this.svg.append("g").attr("class", "labels");
         this.stageHeadersGroup = this.svg.append("g").attr("class", "stageHeaders");
 
-        this.landingPage = d3.select(this.target)
+        this.landingPage = this.wrapper
             .append("div")
             .attr("class", "landingPage")
             .style("display", "none")
@@ -113,7 +130,7 @@ export class Visual implements IVisual {
         this.instanceId = `sankey-${++visualInstanceCounter}`;
         this.activeMenuRawKeys = [];
 
-        this.contextMenu = d3.select(this.target)
+        this.contextMenu = this.wrapper
             .append("div")
             .attr("class", "sankeyContextMenu")
             .style("display", "none")
@@ -239,6 +256,8 @@ export class Visual implements IVisual {
             this.labelsGroup.selectAll("*").remove();
             this.stageHeadersGroup.selectAll("*").remove();
             this.svg.attr("height", height);
+            this.lastGraphNodes = [];
+            this.lastGraphLinks = [];
             return;
         }
 
@@ -274,7 +293,8 @@ export class Visual implements IVisual {
             target: link.target,
             value: link.value,
             selectionId: link.selectionId,
-            tooltipInfo: link.tooltipInfo
+            tooltipInfo: link.tooltipInfo,
+            rawKeys: link.rawKeys
         }));
 
         const sideLabelMargin: number = showLabels ? Math.max(50, labelFontSize * 7) : 4;
@@ -332,13 +352,18 @@ export class Visual implements IVisual {
             this.nodesGroup.selectAll("*").remove();
             this.labelsGroup.selectAll("*").remove();
             this.stageHeadersGroup.selectAll("*").remove();
+            this.lastGraphNodes = [];
+            this.lastGraphLinks = [];
             return;
         }
+
+        this.lastGraphNodes = graph.nodes;
+        this.lastGraphLinks = graph.links;
 
         const linkPathGenerator = sankeyLinkHorizontal<NodeExtraProps, LinkExtraProps>();
         const selectionManager = this.selectionManager;
         const tooltipService = this.tooltipService;
-        const hasSelection: boolean = selectionManager.hasSelection();
+        const highlightedKeys: Set<string> | null = this.getHighlightedKeySet();
 
         const getNodeColor = (node: LayoutNode): string => isHighContrast ? colorPalette.foreground.value : node.color;
 
@@ -386,7 +411,7 @@ export class Visual implements IVisual {
             .attr("d", linkPathGenerator as unknown as (d: LayoutLink) => string)
             .attr("stroke", getLinkColor)
             .attr("stroke-width", d => Math.max(1, d.width))
-            .attr("stroke-opacity", d => hasSelection && !selectionManager.getSelectionIds().some((id: powerbi.visuals.ISelectionId) => id.equals(d.selectionId)) ? linkOpacity * 0.3 : linkOpacity)
+            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : linkOpacity * 0.3)
             .style("cursor", "pointer")
             .on("mousemove", (event: MouseEvent, d: LayoutLink) => {
                 tooltipService.show({
@@ -533,7 +558,7 @@ export class Visual implements IVisual {
         this.includeMenuItem.text(`Include ${label} (keep these keys' full journey)`);
         this.excludeMenuItem.text(`Exclude ${label} (drop these keys entirely)`);
 
-        const hostRect: DOMRect = this.target.getBoundingClientRect();
+        const hostRect: DOMRect = (this.wrapper.node() as HTMLElement).getBoundingClientRect();
         const x: number = event.clientX - hostRect.left;
         const y: number = event.clientY - hostRect.top;
 
@@ -583,16 +608,45 @@ export class Visual implements IVisual {
         this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "filter", FilterAction.remove);
     }
 
+    /**
+     * Every node/link that shares at least one Key with a currently
+     * selected node or link should stay highlighted -- clicking a location
+     * highlights every stage of every key that passed through it, not just
+     * that one rectangle. Returns null when nothing is selected (meaning:
+     * don't dim anything).
+     */
+    private getHighlightedKeySet(): Set<string> | null {
+        if (!this.selectionManager.hasSelection()) {
+            return null;
+        }
+        const selectedIds = this.selectionManager.getSelectionIds();
+        const keys = new Set<string>();
+        this.lastGraphNodes.forEach(node => {
+            if (selectedIds.some((id: powerbi.visuals.ISelectionId) => id.equals(node.selectionId))) {
+                node.rawKeys.forEach(k => keys.add(String(k)));
+            }
+        });
+        this.lastGraphLinks.forEach(link => {
+            if (selectedIds.some((id: powerbi.visuals.ISelectionId) => id.equals(link.selectionId))) {
+                link.rawKeys.forEach(k => keys.add(String(k)));
+            }
+        });
+        return keys;
+    }
+
+    private isHighlighted(rawKeys: PrimitiveValue[], highlightedKeys: Set<string> | null): boolean {
+        return highlightedKeys === null || rawKeys.some(k => highlightedKeys.has(String(k)));
+    }
+
     private updateSelectionStyles(): void {
-        const selectionManager = this.selectionManager;
-        const hasSelection: boolean = selectionManager.hasSelection();
         const linkOpacity: number = Math.min(100, Math.max(5, this.settings.links.linkOpacity)) / 100;
+        const highlightedKeys: Set<string> | null = this.getHighlightedKeySet();
 
         this.linksGroup.selectAll<SVGPathElement, LayoutLink>("path.link")
-            .attr("stroke-opacity", d => hasSelection && !selectionManager.getSelectionIds().some((id: powerbi.visuals.ISelectionId) => id.equals(d.selectionId)) ? linkOpacity * 0.3 : linkOpacity);
+            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : linkOpacity * 0.3);
 
         this.nodesGroup.selectAll<SVGRectElement, LayoutNode>("rect.node")
-            .attr("opacity", d => hasSelection && !selectionManager.getSelectionIds().some((id: powerbi.visuals.ISelectionId) => id.equals(d.selectionId)) ? 0.3 : 1);
+            .attr("opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? 1 : 0.3);
     }
 
     /**

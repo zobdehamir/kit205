@@ -24,6 +24,8 @@ export interface SankeyLink {
     value: number;
     selectionId: ISelectionId;
     tooltipInfo: VisualTooltipDataItem[];
+    /** Raw key values that make up this specific transition. */
+    rawKeys: PrimitiveValue[];
 }
 
 export interface FilterColumnTarget {
@@ -247,12 +249,14 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
                     selectionId: host.createSelectionIdBuilder()
                         .withTable(table, curr.rowIndex)
                         .createSelectionId(),
-                    tooltipInfo: []
+                    tooltipInfo: [],
+                    rawKeys: []
                 });
             }
 
             const link: SankeyLink = links[linkIdx];
             link.value += 1;
+            link.rawKeys.push(group.rawKey);
             link.tooltipInfo = [
                 { displayName: "From", value: `${prev.location} (${stageLabels[prev.stageIdx]})` },
                 { displayName: "To", value: `${curr.location} (${stageLabels[curr.stageIdx]})` },

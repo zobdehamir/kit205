@@ -39,6 +39,9 @@ export interface VisualSettings {
     sorting: {
         stageOrder: string;
     };
+    highlighting: {
+        unhighlightedColor: string;
+    };
 }
 
 export const defaultSettings: VisualSettings = {
@@ -69,6 +72,9 @@ export const defaultSettings: VisualSettings = {
     },
     sorting: {
         stageOrder: ""
+    },
+    highlighting: {
+        unhighlightedColor: "#D9D9D9"
     }
 };
 
@@ -124,6 +130,9 @@ export function parseSettings(dataView: DataView): VisualSettings {
         },
         sorting: {
             stageOrder: getValue(objects, "sorting", "stageOrder", defaultSettings.sorting.stageOrder)
+        },
+        highlighting: {
+            unhighlightedColor: getFillValue(objects, "highlighting", "unhighlightedColor", defaultSettings.highlighting.unhighlightedColor)
         }
     };
 }
@@ -191,6 +200,14 @@ export function enumerateSettingsInstances(settings: VisualSettings, options: En
                 objectName: "sorting",
                 properties: {
                     stageOrder: settings.sorting.stageOrder
+                },
+                selector: null
+            } as VisualObjectInstance];
+        case "highlighting":
+            return [{
+                objectName: "highlighting",
+                properties: {
+                    unhighlightedColor: { solid: { color: settings.highlighting.unhighlightedColor } }
                 },
                 selector: null
             } as VisualObjectInstance];

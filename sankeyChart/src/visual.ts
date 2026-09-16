@@ -267,7 +267,6 @@ export class Visual implements IVisual {
         const showValue: boolean = this.settings.labels.showValue;
         const labelFontSize: number = this.settings.labels.fontSize;
         const colorMode: string = this.settings.links.colorMode;
-        const uniformLinkColor: string = this.settings.links.fill;
         const linkOpacity: number = Math.min(100, Math.max(5, this.settings.links.linkOpacity)) / 100;
 
         const colorPalette = this.host.colorPalette;
@@ -365,21 +364,8 @@ export class Visual implements IVisual {
         const tooltipService = this.tooltipService;
         const highlightedKeys: Set<string> | null = this.getHighlightedKeySet();
 
-        const getNodeColor = (node: LayoutNode): string => isHighContrast ? colorPalette.foreground.value : node.color;
-
-        const getLinkColor = (link: LayoutLink, index: number): string => {
-            if (isHighContrast) {
-                return colorPalette.foreground.value;
-            }
-            if (colorMode === "uniform") {
-                return uniformLinkColor;
-            }
-            if (colorMode === "gradient") {
-                return `url(#sankey-link-gradient-${index})`;
-            }
-            const source = link.source as LayoutNode;
-            return source.color;
-        };
+        const getNodeColor = (node: LayoutNode): string => this.resolveNodeColor(node, highlightedKeys);
+        const getLinkColor = (link: LayoutLink, index: number): string => this.resolveLinkColor(link, index, highlightedKeys);
 
         const useGradient: boolean = colorMode === "gradient" && !isHighContrast;
         const gradients = this.svg.selectAll("defs").data([null]).join("defs");
@@ -411,7 +397,7 @@ export class Visual implements IVisual {
             .attr("d", linkPathGenerator as unknown as (d: LayoutLink) => string)
             .attr("stroke", getLinkColor)
             .attr("stroke-width", d => Math.max(1, d.width))
-            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : linkOpacity * 0.3)
+            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : Math.max(linkOpacity, 0.6))
             .style("cursor", "pointer")
             .on("mousemove", (event: MouseEvent, d: LayoutLink) => {
                 tooltipService.show({
@@ -638,15 +624,46 @@ export class Visual implements IVisual {
         return highlightedKeys === null || rawKeys.some(k => highlightedKeys.has(String(k)));
     }
 
+    private resolveNodeColor(node: LayoutNode, highlightedKeys: Set<string> | null): string {
+        const colorPalette = this.host.colorPalette;
+        if (colorPalette.isHighContrast) {
+            return colorPalette.foreground.value;
+        }
+        if (!this.isHighlighted(node.rawKeys, highlightedKeys)) {
+            return this.settings.highlighting.unhighlightedColor;
+        }
+        return node.color;
+    }
+
+    private resolveLinkColor(link: LayoutLink, index: number, highlightedKeys: Set<string> | null): string {
+        const colorPalette = this.host.colorPalette;
+        if (colorPalette.isHighContrast) {
+            return colorPalette.foreground.value;
+        }
+        if (!this.isHighlighted(link.rawKeys, highlightedKeys)) {
+            return this.settings.highlighting.unhighlightedColor;
+        }
+        const colorMode: string = this.settings.links.colorMode;
+        if (colorMode === "uniform") {
+            return this.settings.links.fill;
+        }
+        if (colorMode === "gradient") {
+            return `url(#sankey-link-gradient-${index})`;
+        }
+        return (link.source as LayoutNode).color;
+    }
+
     private updateSelectionStyles(): void {
         const linkOpacity: number = Math.min(100, Math.max(5, this.settings.links.linkOpacity)) / 100;
         const highlightedKeys: Set<string> | null = this.getHighlightedKeySet();
 
         this.linksGroup.selectAll<SVGPathElement, LayoutLink>("path.link")
-            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : linkOpacity * 0.3);
+            .attr("stroke", (d, i) => this.resolveLinkColor(d, i, highlightedKeys))
+            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : Math.max(linkOpacity, 0.6));
 
         this.nodesGroup.selectAll<SVGRectElement, LayoutNode>("rect.node")
-            .attr("opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? 1 : 0.3);
+            .attr("fill", d => this.resolveNodeColor(d, highlightedKeys))
+            .attr("opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? 1 : 0.6);
     }
 
     /**

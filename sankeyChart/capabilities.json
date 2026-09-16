@@ -170,6 +170,22 @@
                     }
                 }
             }
+        },
+        "highlighting": {
+            "displayName": "Highlighting",
+            "properties": {
+                "unhighlightedColor": {
+                    "displayName": "Unhighlighted color",
+                    "description": "Color used for nodes and links that aren't part of the highlighted key's journey when a node is clicked.",
+                    "type": {
+                        "fill": {
+                            "solid": {
+                                "color": true
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "dataViewMappings": [

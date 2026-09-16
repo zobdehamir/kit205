@@ -106,6 +106,8 @@ Power BI before the visual ever sees them.
   data but missing from this list is appended at the end (nothing is dropped). Leave blank to
   use Power BI's default order for the field.
 - **Stage headers** – show/hide the stage-name row above each column, text color, text size
+- **Highlighting → Unhighlighted color** – the gray used for nodes/links not part of the
+  clicked node's highlighted key set (see below)
 
 ## Vertical scrolling
 
@@ -157,9 +159,12 @@ Clicking a node doesn't just highlight that one rectangle — it highlights
 every node and link belonging to any Key that passes through it, across
 *every* stage, not only the stages adjacent to the click. So clicking
 "Warehouse" at Stage 1 highlights every other location those same keys
-visited at Stage 2, Stage 3, and so on, while locations touched only by
-unrelated keys dim. Clicking the background, or the already-selected node
-again, clears the highlight.
+visited at Stage 2, Stage 3, and so on. Everything else — nodes and links
+belonging only to unrelated keys — turns gray (**Format visual →
+Highlighting → Unhighlighted color**, default light gray) instead of
+keeping its normal color, so the relevant path reads clearly against a
+muted background. Clicking the background, or the already-selected node
+again, clears the highlight and restores normal colors everywhere.
 
 ## Safety limits on very large datasets
 

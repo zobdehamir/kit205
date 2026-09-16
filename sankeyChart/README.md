@@ -116,6 +116,37 @@ the visual becomes vertically scrollable instead of squeezing everything
 down to illegible slivers. The chart never scrolls horizontally — width
 always matches the viewport.
 
+## Include / Exclude a location
+
+Right-clicking a node opens a custom **Include** / **Exclude** / **Clear
+Sankey filter** menu instead of Power BI's default context menu. This is
+deliberate: Power BI's built-in Include/Exclude ties its filter to the
+exact identity of the clicked data point — for this visual that's one
+specific Key+Stage+Location row — so its native "Include" would filter the
+whole model down to just that one row (blanking every other stage of every
+key) and its native "Exclude" would only drop that single row instead of
+the key.
+
+Right-clicking a **Location at a Stage** and choosing:
+
+- **Include** — keeps every Key that was at that Location during that
+  Stage, along with *all* of that Key's other rows (every other stage,
+  whatever location it was at there).
+- **Exclude** — drops those same Keys entirely, everywhere, not just their
+  row at that Location/Stage.
+- **Clear Sankey filter** — removes the filter this visual applied.
+
+Under the hood this calls `host.applyJsonFilter` with a basic filter on the
+Key column (`operator: "In"` / `"NotIn"`, listing every Key that touches
+the clicked node) rather than relying on Power BI's selection-identity
+based Include/Exclude, since a per-row identity can't express "this
+Location at this Stage, but keep/drop the whole Key regardless of Stage."
+
+Right-clicking a **link** (a flow between two nodes) still opens Power BI's
+default Include/Exclude menu, which has the same single-row limitation
+described above — let us know if you'd like the same custom Key-level
+filtering extended there too.
+
 ## Build
 
 ```bash

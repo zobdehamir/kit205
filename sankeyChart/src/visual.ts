@@ -15,9 +15,11 @@ import ISelectionManager = powerbi.extensibility.ISelectionManager;
 import ITooltipService = powerbi.extensibility.ITooltipService;
 import EnumerateVisualObjectInstancesOptions = powerbi.EnumerateVisualObjectInstancesOptions;
 import VisualObjectInstanceEnumeration = powerbi.VisualObjectInstanceEnumeration;
+import PrimitiveValue = powerbi.PrimitiveValue;
+import FilterAction = powerbi.FilterAction;
 
 import { VisualSettings, defaultSettings, parseSettings, enumerateSettingsInstances } from "./settings";
-import { convertDataView, SankeyNode, SankeyLink } from "./sankeyDataView";
+import { convertDataView, SankeyNode, SankeyLink, FilterColumnTarget } from "./sankeyDataView";
 
 type Selection<T extends d3.BaseType> = d3.Selection<T, unknown, null, undefined>;
 
@@ -26,6 +28,7 @@ interface NodeExtraProps extends SankeyExtraProperties {
     stageIndex: number;
     color: string;
     selectionId: powerbi.visuals.ISelectionId;
+    rawKeys: PrimitiveValue[];
 }
 
 interface LinkExtraProps extends SankeyExtraProperties {
@@ -35,6 +38,14 @@ interface LinkExtraProps extends SankeyExtraProperties {
 
 type LayoutNode = SankeySankeyNode<NodeExtraProps, LinkExtraProps>;
 type LayoutLink = SankeySankeyLink<NodeExtraProps, LinkExtraProps>;
+
+let visualInstanceCounter = 0;
+
+// This is Power BI's required literal schema identifier for a basic filter
+// passed to host.applyJsonFilter, not a network resource -- it must stay
+// exactly "http://powerbi.com/product/schema#basic".
+// eslint-disable-next-line powerbi-visuals/no-http-string
+const BASIC_FILTER_SCHEMA = "http://powerbi.com/product/schema#basic";
 
 export class Visual implements IVisual {
     private events: IVisualEventService;
@@ -50,9 +61,15 @@ export class Visual implements IVisual {
     private labelsGroup: Selection<SVGGElement>;
     private stageHeadersGroup: Selection<SVGGElement>;
     private landingPage: Selection<HTMLDivElement>;
+    private contextMenu: Selection<HTMLDivElement>;
+    private includeMenuItem: Selection<HTMLDivElement>;
+    private excludeMenuItem: Selection<HTMLDivElement>;
 
     private settings: VisualSettings;
     private allowInteractions: boolean;
+    private keyColumnTarget: FilterColumnTarget;
+    private activeMenuRawKeys: PrimitiveValue[];
+    private instanceId: string;
 
     constructor(options: VisualConstructorOptions) {
         this.host = options.host;
@@ -62,6 +79,8 @@ export class Visual implements IVisual {
         this.settings = defaultSettings;
         this.target = options.element;
         this.allowInteractions = options.host.hostCapabilities.allowInteractions !== false;
+
+        d3.select(this.target).style("position", "relative");
 
         this.scrollContainer = d3.select(this.target)
             .append("div")
@@ -82,12 +101,50 @@ export class Visual implements IVisual {
             .style("display", "none")
             .text("Add Key, Stage and Location fields to build the Sankey diagram.");
 
+        this.instanceId = `sankey-${++visualInstanceCounter}`;
+        this.activeMenuRawKeys = [];
+
+        this.contextMenu = d3.select(this.target)
+            .append("div")
+            .attr("class", "sankeyContextMenu")
+            .style("display", "none")
+            .on("click", (event: MouseEvent) => event.stopPropagation())
+            .on("contextmenu", (event: MouseEvent) => event.preventDefault());
+
+        this.includeMenuItem = this.contextMenu.append("div")
+            .attr("class", "sankeyContextMenuItem")
+            .on("click", () => {
+                this.applyKeyFilter(this.activeMenuRawKeys, "include");
+                this.hideContextMenu();
+            });
+
+        this.excludeMenuItem = this.contextMenu.append("div")
+            .attr("class", "sankeyContextMenuItem")
+            .on("click", () => {
+                this.applyKeyFilter(this.activeMenuRawKeys, "exclude");
+                this.hideContextMenu();
+            });
+
+        this.contextMenu.append("div")
+            .attr("class", "sankeyContextMenuDivider");
+
+        this.contextMenu.append("div")
+            .attr("class", "sankeyContextMenuItem sankeyContextMenuItemMuted")
+            .text("Clear Sankey filter")
+            .on("click", () => {
+                this.clearKeyFilter();
+                this.hideContextMenu();
+            });
+
+        d3.select(document).on(`click.${this.instanceId}`, () => this.hideContextMenu());
+
         this.svg.on("click", () => {
             if (!this.allowInteractions) {
                 return;
             }
             this.selectionManager.clear();
             this.updateSelectionStyles();
+            this.hideContextMenu();
         });
 
         this.svg.on("contextmenu", (event: MouseEvent) => {
@@ -95,8 +152,12 @@ export class Visual implements IVisual {
                 return;
             }
             event.preventDefault();
-            this.selectionManager.showContextMenu({} as powerbi.visuals.ISelectionId, { x: event.clientX, y: event.clientY });
+            this.hideContextMenu();
         });
+    }
+
+    public destroy(): void {
+        d3.select(document).on(`click.${this.instanceId}`, null);
     }
 
     public update(options: VisualUpdateOptions) {
@@ -116,13 +177,15 @@ export class Visual implements IVisual {
             const hasRows: boolean = !!(dataView && dataView.table && dataView.table.rows && dataView.table.rows.length);
 
             if (!hasRows) {
+                this.keyColumnTarget = null;
                 this.showMessage("Add Key, Stage and Location fields to build the Sankey diagram.");
                 this.render([], [], [], width, height);
                 this.events.renderingFinished(options);
                 return;
             }
 
-            const { nodes, links, stageLabels } = convertDataView(dataView, this.host, this.settings.dataPoint.defaultColor, this.settings.dataPoint.colorByCategory, this.settings.sorting.stageOrder);
+            const { nodes, links, stageLabels, keyColumnTarget } = convertDataView(dataView, this.host, this.settings.dataPoint.defaultColor, this.settings.dataPoint.colorByCategory, this.settings.sorting.stageOrder);
+            this.keyColumnTarget = keyColumnTarget;
 
             if (!nodes.length || !links.length) {
                 this.showMessage("No transitions to show. Each Key needs rows for at least two different Stage values, with matching Key/Stage/Location text in every row.");
@@ -186,7 +249,8 @@ export class Visual implements IVisual {
             name: node.name,
             stageIndex: node.stageIndex,
             color: node.color,
-            selectionId: node.selectionId
+            selectionId: node.selectionId,
+            rawKeys: node.rawKeys
         }));
 
         const layoutLinks: LayoutLink[] = links.map(link => ({
@@ -375,7 +439,7 @@ export class Visual implements IVisual {
                 }
                 event.preventDefault();
                 event.stopPropagation();
-                selectionManager.showContextMenu(d.selectionId, { x: event.clientX, y: event.clientY });
+                this.showContextMenuFor(d, event);
             });
 
         const labelSelection = this.labelsGroup.selectAll<SVGTextElement, LayoutNode>("text.label")
@@ -432,6 +496,67 @@ export class Visual implements IVisual {
             .style("font-size", `${stageHeaderFontSize}px`)
             .style("font-weight", "600")
             .text(d => d.label);
+    }
+
+    /**
+     * Shows the custom Include/Exclude menu for a clicked (location, stage)
+     * node. Power BI's own right-click Include/Exclude ties its filter to
+     * the exact identity of the clicked data point -- for this visual that
+     * would mean a single Key+Stage+Location row, so "Include" would filter
+     * the whole model down to that one row (blanking every other stage of
+     * every key) and "Exclude" would only drop that one row instead of the
+     * key. Filtering on the Key column directly, with the full set of raw
+     * key values gathered at this node, keeps/drops each key's entire
+     * journey (every stage, whatever location) instead.
+     */
+    private showContextMenuFor(node: LayoutNode, event: MouseEvent): void {
+        this.activeMenuRawKeys = node.rawKeys;
+
+        const label = `"${node.name}"`;
+        this.includeMenuItem.text(`Include ${label} (keep these keys' full journey)`);
+        this.excludeMenuItem.text(`Exclude ${label} (drop these keys entirely)`);
+
+        const hostRect: DOMRect = this.target.getBoundingClientRect();
+        const x: number = event.clientX - hostRect.left;
+        const y: number = event.clientY - hostRect.top;
+
+        this.contextMenu
+            .style("left", `${x}px`)
+            .style("top", `${y}px`)
+            .style("display", "block");
+    }
+
+    private hideContextMenu(): void {
+        this.contextMenu.style("display", "none");
+        this.activeMenuRawKeys = [];
+    }
+
+    private applyKeyFilter(rawKeys: PrimitiveValue[], action: "include" | "exclude"): void {
+        if (!this.keyColumnTarget || !rawKeys || !rawKeys.length) {
+            return;
+        }
+        const filter = {
+            $schema: BASIC_FILTER_SCHEMA,
+            target: { table: this.keyColumnTarget.table, column: this.keyColumnTarget.column },
+            filterType: 1,
+            operator: action === "include" ? "In" : "NotIn",
+            values: rawKeys
+        };
+        this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "filter", FilterAction.merge);
+    }
+
+    private clearKeyFilter(): void {
+        if (!this.keyColumnTarget) {
+            return;
+        }
+        const filter = {
+            $schema: BASIC_FILTER_SCHEMA,
+            target: { table: this.keyColumnTarget.table, column: this.keyColumnTarget.column },
+            filterType: 1,
+            operator: "All",
+            values: []
+        };
+        this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "filter", FilterAction.remove);
     }
 
     private updateSelectionStyles(): void {

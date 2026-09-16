@@ -14,6 +14,8 @@ export interface SankeyNode {
     stageIndex: number;
     color: string;
     selectionId: ISelectionId;
+    /** Raw (untrimmed, original-type) Key values for every key that passes through this node. */
+    rawKeys: PrimitiveValue[];
 }
 
 export interface SankeyLink {
@@ -24,16 +26,44 @@ export interface SankeyLink {
     tooltipInfo: VisualTooltipDataItem[];
 }
 
+export interface FilterColumnTarget {
+    table: string;
+    column: string;
+}
+
 export interface SankeyData {
     nodes: SankeyNode[];
     links: SankeyLink[];
     stageLabels: string[];
+    keyColumnTarget: FilterColumnTarget;
 }
 
-const EMPTY_DATA: SankeyData = { nodes: [], links: [], stageLabels: [] };
+const EMPTY_DATA: SankeyData = { nodes: [], links: [], stageLabels: [], keyColumnTarget: null };
 
 function findRoleColumnIndex(table: DataViewTable, role: string): number {
     return table.columns.findIndex(column => column.roles && column.roles[role]);
+}
+
+/**
+ * Resolves a column's fully-qualified table/column identity from its
+ * queryName (e.g. "Orders.Key" -> { table: "Orders", column: "Key" }), for
+ * use as the `target` of a host.applyJsonFilter basic filter. Returns null
+ * if the column has no queryName to parse (shouldn't happen for a bound
+ * DataView column, but guards against a malformed/unexpected DataView).
+ */
+function getColumnFilterTarget(column: powerbi.DataViewMetadataColumn): FilterColumnTarget {
+    const queryName: string = column && column.queryName;
+    if (!queryName) {
+        return null;
+    }
+    const lastDot: number = queryName.lastIndexOf(".");
+    if (lastDot === -1) {
+        return null;
+    }
+    return {
+        table: queryName.slice(0, lastDot),
+        column: queryName.slice(lastDot + 1)
+    };
 }
 
 function formatValue(value: PrimitiveValue): string {
@@ -141,9 +171,14 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
     stageLabels.forEach((label, index) => stageIndexByLabel.set(label, index));
 
     // Group rows by key, keeping (at most) one location per stage per key.
-    const entriesByKey = new Map<string, Map<number, KeyStageEntry>>();
+    interface KeyGroup {
+        rawKey: PrimitiveValue;
+        stages: Map<number, KeyStageEntry>;
+    }
+    const entriesByKey = new Map<string, KeyGroup>();
     table.rows.forEach((row, rowIndex) => {
-        const keyValue: string = formatValue(row[keyIndex]);
+        const rawKey: PrimitiveValue = row[keyIndex];
+        const keyValue: string = formatValue(rawKey);
         const locationValue: string = canonicalize(locationCanonicalByKey, row[locationIndex]);
         const stageValue: string = canonicalize(stageCanonicalByKey, row[stageColumnIndex]);
         const stageIdx: number = stageIndexByLabel.get(stageValue);
@@ -152,12 +187,12 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
             return;
         }
 
-        let stagesForKey: Map<number, KeyStageEntry> = entriesByKey.get(keyValue);
-        if (!stagesForKey) {
-            stagesForKey = new Map<number, KeyStageEntry>();
-            entriesByKey.set(keyValue, stagesForKey);
+        let group: KeyGroup = entriesByKey.get(keyValue);
+        if (!group) {
+            group = { rawKey, stages: new Map<number, KeyStageEntry>() };
+            entriesByKey.set(keyValue, group);
         }
-        stagesForKey.set(stageIdx, { stageIdx, location: locationValue, rowIndex });
+        group.stages.set(stageIdx, { stageIdx, location: locationValue, rowIndex });
     });
 
     const nodes: SankeyNode[] = [];
@@ -180,17 +215,19 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
                 color,
                 selectionId: host.createSelectionIdBuilder()
                     .withTable(table, entry.rowIndex)
-                    .createSelectionId()
+                    .createSelectionId(),
+                rawKeys: []
             });
         }
         return index;
     };
 
-    entriesByKey.forEach(stagesForKey => {
-        const sortedEntries: KeyStageEntry[] = Array.from(stagesForKey.values())
+    entriesByKey.forEach(group => {
+        const sortedEntries: KeyStageEntry[] = Array.from(group.stages.values())
             .sort((a, b) => a.stageIdx - b.stageIdx);
 
         const nodeIndices: number[] = sortedEntries.map(getOrCreateNode);
+        nodeIndices.forEach(nodeIndex => nodes[nodeIndex].rawKeys.push(group.rawKey));
 
         for (let i = 1; i < sortedEntries.length; i++) {
             const prev: KeyStageEntry = sortedEntries[i - 1];
@@ -224,5 +261,5 @@ export function convertDataView(dataView: DataView, host: IVisualHost, defaultCo
         }
     });
 
-    return { nodes, links, stageLabels };
+    return { nodes, links, stageLabels, keyColumnTarget: getColumnFilterTarget(table.columns[keyIndex]) };
 }

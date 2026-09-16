@@ -37,3 +37,40 @@
     font-family: "Segoe UI", wf_segoe-ui_normal, helvetica, arial, sans-serif;
     font-size: 13px;
 }
+
+.sankeyContextMenu {
+    position: absolute;
+    z-index: 1000;
+    min-width: 220px;
+    max-width: 320px;
+    background: #ffffff;
+    border: 1px solid #d2d0ce;
+    border-radius: 2px;
+    box-shadow: 0 1.6px 3.6px rgba(0, 0, 0, 0.13), 0 0.3px 0.9px rgba(0, 0, 0, 0.1);
+    font-family: "Segoe UI", wf_segoe-ui_normal, helvetica, arial, sans-serif;
+    font-size: 12px;
+    padding: 4px 0;
+    user-select: none;
+
+    .sankeyContextMenuItem {
+        padding: 8px 12px;
+        cursor: pointer;
+        color: #252423;
+        white-space: normal;
+        line-height: 1.3;
+
+        &:hover {
+            background: #f3f2f1;
+        }
+    }
+
+    .sankeyContextMenuItemMuted {
+        color: #605e5c;
+    }
+
+    .sankeyContextMenuDivider {
+        height: 1px;
+        margin: 4px 0;
+        background: #edebe9;
+    }
+}

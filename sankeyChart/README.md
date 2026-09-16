@@ -163,8 +163,15 @@ visited at Stage 2, Stage 3, and so on. Everything else — nodes and links
 belonging only to unrelated keys — turns gray (**Format visual →
 Highlighting → Unhighlighted color**, default light gray) instead of
 keeping its normal color, so the relevant path reads clearly against a
-muted background. Clicking the background, or the already-selected node
-again, clears the highlight and restores normal colors everywhere.
+muted background.
+
+The highlight is proportional, not all-or-nothing: if a node or link is
+shared by both highlighted and unrelated keys (e.g. a "Hub" location
+visited by 3 keys, only 2 of which are highlighted), only that fraction of
+its height/width stays colored — the rest of that same shape turns gray,
+with a clean edge at the boundary — rather than coloring or graying the
+whole shape. Clicking the background, or the already-selected node again,
+clears the highlight and restores normal colors everywhere.
 
 ## Safety limits on very large datasets
 

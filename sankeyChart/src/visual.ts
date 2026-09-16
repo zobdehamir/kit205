@@ -40,6 +40,19 @@ interface LinkExtraProps extends SankeyExtraProperties {
 type LayoutNode = SankeySankeyNode<NodeExtraProps, LinkExtraProps>;
 type LayoutLink = SankeySankeyLink<NodeExtraProps, LinkExtraProps>;
 
+interface LinkRenderSegment {
+    source: LayoutNode;
+    target: LayoutNode;
+    y0: number;
+    y1: number;
+    width: number;
+    color: string;
+    opacity: number;
+    variant: "highlighted" | "gray";
+    selectionId: powerbi.visuals.ISelectionId;
+    tooltipInfo: powerbi.extensibility.VisualTooltipDataItem[];
+}
+
 let visualInstanceCounter = 0;
 
 // This is Power BI's required literal schema identifier for a basic filter
@@ -359,21 +372,18 @@ export class Visual implements IVisual {
         this.lastGraphNodes = graph.nodes;
         this.lastGraphLinks = graph.links;
 
-        const linkPathGenerator = sankeyLinkHorizontal<NodeExtraProps, LinkExtraProps>();
         const selectionManager = this.selectionManager;
         const tooltipService = this.tooltipService;
         const highlightedKeys: Set<string> | null = this.getHighlightedKeySet();
 
-        const getNodeColor = (node: LayoutNode): string => this.resolveNodeColor(node, highlightedKeys);
-        const getLinkColor = (link: LayoutLink, index: number): string => this.resolveLinkColor(link, index, highlightedKeys);
-
         const useGradient: boolean = colorMode === "gradient" && !isHighContrast;
         const gradients = this.svg.selectAll("defs").data([null]).join("defs");
-        const gradientSelection = gradients.selectAll<SVGLinearGradientElement, LayoutLink>("linearGradient")
+        const gradientSelection = gradients.selectAll<SVGLinearGradientElement, LayoutLink>("linearGradient.colorGradient")
             .data(useGradient ? graph.links : [], (_d, i) => String(i));
         gradientSelection.exit().remove();
         const gradientEnter = gradientSelection.enter()
             .append("linearGradient")
+            .attr("class", "colorGradient")
             .attr("gradientUnits", "userSpaceOnUse");
         const gradientMerge = gradientEnter.merge(gradientSelection)
             .attr("id", (_d, i) => `sankey-link-gradient-${i}`)
@@ -383,46 +393,8 @@ export class Visual implements IVisual {
         gradientMerge.append("stop").attr("offset", "0%").attr("stop-color", d => (d.source as LayoutNode).color);
         gradientMerge.append("stop").attr("offset", "100%").attr("stop-color", d => (d.target as LayoutNode).color);
 
-        const linkSelection = this.linksGroup.selectAll<SVGPathElement, LayoutLink>("path.link")
-            .data(graph.links, (d: LayoutLink) => d.selectionId.getKey());
-
-        linkSelection.exit().remove();
-
-        const linkEnter = linkSelection.enter()
-            .append("path")
-            .attr("class", "link")
-            .attr("fill", "none");
-
-        linkEnter.merge(linkSelection)
-            .attr("d", linkPathGenerator as unknown as (d: LayoutLink) => string)
-            .attr("stroke", getLinkColor)
-            .attr("stroke-width", d => Math.max(1, d.width))
-            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : Math.max(linkOpacity, 0.6))
-            .style("cursor", "pointer")
-            .on("mousemove", (event: MouseEvent, d: LayoutLink) => {
-                tooltipService.show({
-                    coordinates: [event.offsetX, event.offsetY],
-                    isTouchEvent: false,
-                    dataItems: d.tooltipInfo,
-                    identities: [d.selectionId]
-                });
-            })
-            .on("mouseleave", () => tooltipService.hide({ immediately: true, isTouchEvent: false }))
-            .on("click", (event: MouseEvent, d: LayoutLink) => {
-                if (!this.allowInteractions) {
-                    return;
-                }
-                event.stopPropagation();
-                selectionManager.select(d.selectionId, event.ctrlKey || event.metaKey).then(() => this.updateSelectionStyles());
-            })
-            .on("contextmenu", (event: MouseEvent, d: LayoutLink) => {
-                if (!this.allowInteractions) {
-                    return;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                selectionManager.showContextMenu(d.selectionId, { x: event.clientX, y: event.clientY });
-            });
+        this.renderNodeHighlightGradients(graph.nodes, highlightedKeys);
+        this.renderLinkSegments(graph.links, highlightedKeys);
 
         const nodeSelection = this.nodesGroup.selectAll<SVGRectElement, LayoutNode>("rect.node")
             .data(graph.nodes, (d: LayoutNode) => d.selectionId.getKey());
@@ -438,7 +410,8 @@ export class Visual implements IVisual {
             .attr("y", d => d.y0)
             .attr("width", d => Math.max(1, d.x1 - d.x0))
             .attr("height", d => Math.max(1, d.y1 - d.y0))
-            .attr("fill", getNodeColor)
+            .attr("fill", (d, i) => this.resolveNodeFill(d, i, highlightedKeys))
+            .attr("opacity", d => this.resolveNodeOpacity(d, highlightedKeys))
             .attr("stroke", nodeStrokeColor)
             .style("cursor", "pointer")
             .on("mousemove", (event: MouseEvent, d: LayoutNode) => {
@@ -620,28 +593,29 @@ export class Visual implements IVisual {
         return keys;
     }
 
-    private isHighlighted(rawKeys: PrimitiveValue[], highlightedKeys: Set<string> | null): boolean {
-        return highlightedKeys === null || rawKeys.some(k => highlightedKeys.has(String(k)));
+    /**
+     * Fraction (0-1) of this element's keys that are in the highlighted
+     * set. 1 when nothing is selected (everything counts as "fully
+     * relevant"), 0 when none of its keys are highlighted, and a value in
+     * between when the node/link is shared by both highlighted and
+     * unrelated keys -- that fraction drives how much of the shape stays
+     * colored vs. turns gray, rather than an all-or-nothing toggle.
+     */
+    private highlightFraction(rawKeys: PrimitiveValue[], highlightedKeys: Set<string> | null): number {
+        if (highlightedKeys === null) {
+            return 1;
+        }
+        if (!rawKeys.length) {
+            return 0;
+        }
+        const highlightedCount = rawKeys.filter(k => highlightedKeys.has(String(k))).length;
+        return highlightedCount / rawKeys.length;
     }
 
-    private resolveNodeColor(node: LayoutNode, highlightedKeys: Set<string> | null): string {
-        const colorPalette = this.host.colorPalette;
-        if (colorPalette.isHighContrast) {
-            return colorPalette.foreground.value;
-        }
-        if (!this.isHighlighted(node.rawKeys, highlightedKeys)) {
-            return this.settings.highlighting.unhighlightedColor;
-        }
-        return node.color;
-    }
-
-    private resolveLinkColor(link: LayoutLink, index: number, highlightedKeys: Set<string> | null): string {
-        const colorPalette = this.host.colorPalette;
-        if (colorPalette.isHighContrast) {
-            return colorPalette.foreground.value;
-        }
-        if (!this.isHighlighted(link.rawKeys, highlightedKeys)) {
-            return this.settings.highlighting.unhighlightedColor;
+    /** The link's "natural" color, as if it were fully highlighted. */
+    private resolveLinkBaseColor(link: LayoutLink, index: number): string {
+        if (this.host.colorPalette.isHighContrast) {
+            return this.host.colorPalette.foreground.value;
         }
         const colorMode: string = this.settings.links.colorMode;
         if (colorMode === "uniform") {
@@ -653,17 +627,181 @@ export class Visual implements IVisual {
         return (link.source as LayoutNode).color;
     }
 
-    private updateSelectionStyles(): void {
+    /**
+     * Splits each link into one or two render segments so only the portion
+     * of its band belonging to highlighted keys is colored -- e.g. a link
+     * carrying 3 keys where only 2 are highlighted renders as a colored
+     * sub-band covering 2/3 of its width plus a gray sub-band for the rest,
+     * rather than coloring (or graying) the whole band. sankeyLinkHorizontal
+     * only reads source.x1/target.x0/y0/y1 to build the path, so a segment
+     * with an adjusted y0/y1 (recentered within the original band) and a
+     * proportionally narrower width renders as exactly that sub-band.
+     */
+    private buildLinkSegments(links: LayoutLink[], highlightedKeys: Set<string> | null): LinkRenderSegment[] {
         const linkOpacity: number = Math.min(100, Math.max(5, this.settings.links.linkOpacity)) / 100;
+        const grayOpacity: number = Math.max(linkOpacity, 0.6);
+        const grayColor: string = this.host.colorPalette.isHighContrast
+            ? this.host.colorPalette.foreground.value
+            : this.settings.highlighting.unhighlightedColor;
+
+        const segments: LinkRenderSegment[] = [];
+        links.forEach((link, index) => {
+            const source = link.source as LayoutNode;
+            const target = link.target as LayoutNode;
+            const baseWidth: number = link.width ?? 0;
+            const fraction: number = this.highlightFraction(link.rawKeys, highlightedKeys);
+
+            if (fraction >= 1) {
+                segments.push({
+                    source, target, y0: link.y0, y1: link.y1, width: baseWidth,
+                    color: this.resolveLinkBaseColor(link, index), opacity: linkOpacity,
+                    variant: "highlighted", selectionId: link.selectionId, tooltipInfo: link.tooltipInfo
+                });
+                return;
+            }
+            if (fraction <= 0) {
+                segments.push({
+                    source, target, y0: link.y0, y1: link.y1, width: baseWidth,
+                    color: grayColor, opacity: grayOpacity,
+                    variant: "gray", selectionId: link.selectionId, tooltipInfo: link.tooltipInfo
+                });
+                return;
+            }
+
+            const highlightedWidth: number = baseWidth * fraction;
+            const grayWidth: number = baseWidth - highlightedWidth;
+            segments.push({
+                source, target,
+                y0: link.y0 - baseWidth / 2 + highlightedWidth / 2,
+                y1: link.y1 - baseWidth / 2 + highlightedWidth / 2,
+                width: highlightedWidth,
+                color: this.resolveLinkBaseColor(link, index), opacity: linkOpacity,
+                variant: "highlighted", selectionId: link.selectionId, tooltipInfo: link.tooltipInfo
+            });
+            segments.push({
+                source, target,
+                y0: link.y0 + baseWidth / 2 - grayWidth / 2,
+                y1: link.y1 + baseWidth / 2 - grayWidth / 2,
+                width: grayWidth,
+                color: grayColor, opacity: grayOpacity,
+                variant: "gray", selectionId: link.selectionId, tooltipInfo: link.tooltipInfo
+            });
+        });
+        return segments;
+    }
+
+    private renderLinkSegments(links: LayoutLink[], highlightedKeys: Set<string> | null): void {
+        const linkPathGenerator = sankeyLinkHorizontal<NodeExtraProps, LinkExtraProps>();
+        const segments: LinkRenderSegment[] = this.buildLinkSegments(links, highlightedKeys);
+        const selectionManager = this.selectionManager;
+        const tooltipService = this.tooltipService;
+
+        const linkSelection = this.linksGroup.selectAll<SVGPathElement, LinkRenderSegment>("path.link")
+            .data(segments, (d: LinkRenderSegment) => `${d.selectionId.getKey()}::${d.variant}`);
+
+        linkSelection.exit().remove();
+
+        const linkEnter = linkSelection.enter()
+            .append("path")
+            .attr("class", "link")
+            .attr("fill", "none");
+
+        linkEnter.merge(linkSelection)
+            .attr("d", d => linkPathGenerator(d as unknown as LayoutLink))
+            .attr("stroke", d => d.color)
+            .attr("stroke-width", d => Math.max(1, d.width))
+            .attr("stroke-opacity", d => d.opacity)
+            .style("cursor", "pointer")
+            .on("mousemove", (event: MouseEvent, d: LinkRenderSegment) => {
+                tooltipService.show({
+                    coordinates: [event.offsetX, event.offsetY],
+                    isTouchEvent: false,
+                    dataItems: d.tooltipInfo,
+                    identities: [d.selectionId]
+                });
+            })
+            .on("mouseleave", () => tooltipService.hide({ immediately: true, isTouchEvent: false }))
+            .on("click", (event: MouseEvent, d: LinkRenderSegment) => {
+                if (!this.allowInteractions) {
+                    return;
+                }
+                event.stopPropagation();
+                selectionManager.select(d.selectionId, event.ctrlKey || event.metaKey).then(() => this.updateSelectionStyles());
+            })
+            .on("contextmenu", (event: MouseEvent, d: LinkRenderSegment) => {
+                if (!this.allowInteractions) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                selectionManager.showContextMenu(d.selectionId, { x: event.clientX, y: event.clientY });
+            });
+    }
+
+    /**
+     * A node's fill is normally solid (fully its own color, or fully gray),
+     * but when it's shared by both highlighted and unrelated keys, a
+     * per-node vertical gradient with a hard color/gray edge at the
+     * highlighted fraction gives the same proportional partial-highlight
+     * treatment as buildLinkSegments does for links -- e.g. a node with 3
+     * keys where 2 are highlighted renders 2/3 colored, 1/3 gray, instead
+     * of coloring (or graying) the whole rectangle.
+     */
+    private resolveNodeFill(node: LayoutNode, index: number, highlightedKeys: Set<string> | null): string {
+        if (this.host.colorPalette.isHighContrast) {
+            return this.host.colorPalette.foreground.value;
+        }
+        const fraction: number = this.highlightFraction(node.rawKeys, highlightedKeys);
+        if (fraction >= 1) {
+            return node.color;
+        }
+        if (fraction <= 0) {
+            return this.settings.highlighting.unhighlightedColor;
+        }
+        return `url(#sankey-node-partial-${index})`;
+    }
+
+    private resolveNodeOpacity(node: LayoutNode, highlightedKeys: Set<string> | null): number {
+        return this.highlightFraction(node.rawKeys, highlightedKeys) > 0 ? 1 : 0.6;
+    }
+
+    private renderNodeHighlightGradients(nodes: LayoutNode[], highlightedKeys: Set<string> | null): void {
+        const defs = this.svg.selectAll("defs").data([null]).join("defs");
+        const unhighlightedColor: string = this.settings.highlighting.unhighlightedColor;
+
+        const partial = nodes
+            .map((node, index) => ({ node, index, fraction: this.highlightFraction(node.rawKeys, highlightedKeys) }))
+            .filter(d => d.fraction > 0 && d.fraction < 1);
+
+        const gradientSelection = defs.selectAll<SVGLinearGradientElement, { node: LayoutNode; index: number; fraction: number }>("linearGradient.nodeHighlight")
+            .data(partial, d => String(d.index));
+
+        gradientSelection.exit().remove();
+
+        const gradientEnter = gradientSelection.enter()
+            .append("linearGradient")
+            .attr("class", "nodeHighlight")
+            .attr("x1", "0%").attr("x2", "0%").attr("y1", "0%").attr("y2", "100%");
+
+        const gradientMerge = gradientEnter.merge(gradientSelection)
+            .attr("id", d => `sankey-node-partial-${d.index}`);
+
+        gradientMerge.selectAll("stop").remove();
+        gradientMerge.append("stop").attr("offset", "0%").attr("stop-color", d => d.node.color);
+        gradientMerge.append("stop").attr("offset", d => `${d.fraction * 100}%`).attr("stop-color", d => d.node.color);
+        gradientMerge.append("stop").attr("offset", d => `${d.fraction * 100}%`).attr("stop-color", unhighlightedColor);
+        gradientMerge.append("stop").attr("offset", "100%").attr("stop-color", unhighlightedColor);
+    }
+
+    private updateSelectionStyles(): void {
         const highlightedKeys: Set<string> | null = this.getHighlightedKeySet();
 
-        this.linksGroup.selectAll<SVGPathElement, LayoutLink>("path.link")
-            .attr("stroke", (d, i) => this.resolveLinkColor(d, i, highlightedKeys))
-            .attr("stroke-opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? linkOpacity : Math.max(linkOpacity, 0.6));
-
+        this.renderNodeHighlightGradients(this.lastGraphNodes, highlightedKeys);
         this.nodesGroup.selectAll<SVGRectElement, LayoutNode>("rect.node")
-            .attr("fill", d => this.resolveNodeColor(d, highlightedKeys))
-            .attr("opacity", d => this.isHighlighted(d.rawKeys, highlightedKeys) ? 1 : 0.6);
+            .attr("fill", (d, i) => this.resolveNodeFill(d, i, highlightedKeys))
+            .attr("opacity", d => this.resolveNodeOpacity(d, highlightedKeys));
+
+        this.renderLinkSegments(this.lastGraphLinks, highlightedKeys);
     }
 
     /**

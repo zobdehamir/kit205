@@ -141,11 +141,32 @@ Key column (`operator: "In"` / `"NotIn"`, listing every Key that touches
 the clicked node) rather than relying on Power BI's selection-identity
 based Include/Exclude, since a per-row identity can't express "this
 Location at this Stage, but keep/drop the whole Key regardless of Stage."
+It's applied both as `"selfFilter"` (so the Sankey redraws itself) and as
+`"filter"` (so other visuals on the report page respect it too) — both
+properties are declared under a `"general"` object in `capabilities.json`,
+which the host requires before it will honor either call.
 
 Right-clicking a **link** (a flow between two nodes) still opens Power BI's
 default Include/Exclude menu, which has the same single-row limitation
 described above — let us know if you'd like the same custom Key-level
 filtering extended there too.
+
+## Safety limits on very large datasets
+
+Two guardrails keep an oversized dataset from rendering blank or freezing
+the host instead of failing clearly:
+
+- If the data resolves to more than 3,000 nodes or 6,000 links, the visual
+  shows a message asking you to filter to fewer Keys/Stages/Locations
+  rather than attempting the render.
+- The chart's total height (see Vertical scrolling above) is capped at
+  20,000px even if the "every row gets a minimum readable height" math
+  would ask for more — past that point rows get thinner rather than the
+  SVG growing indefinitely.
+
+Both limits are constants near the top of `src/visual.ts`
+(`MAX_RENDERED_NODES`, `MAX_RENDERED_LINKS`, `MAX_SVG_HEIGHT_PX`) if you
+need to raise or lower them for your environment.
 
 ## Build
 

@@ -47,6 +47,15 @@ let visualInstanceCounter = 0;
 // eslint-disable-next-line powerbi-visuals/no-http-string
 const BASIC_FILTER_SCHEMA = "http://powerbi.com/product/schema#basic";
 
+// Safety caps so an extremely large dataset degrades to a clear message
+// instead of risking a blank/frozen render -- especially important on
+// constrained older visual hosts (e.g. Power BI Report Server / Report
+// Builder's embedded renderer) that may struggle with thousands of SVG
+// elements or a very tall SVG even where a modern browser would cope fine.
+const MAX_RENDERED_NODES = 3000;
+const MAX_RENDERED_LINKS = 6000;
+const MAX_SVG_HEIGHT_PX = 20000;
+
 export class Visual implements IVisual {
     private events: IVisualEventService;
     private host: IVisualHost;
@@ -194,6 +203,13 @@ export class Visual implements IVisual {
                 return;
             }
 
+            if (nodes.length > MAX_RENDERED_NODES || links.length > MAX_RENDERED_LINKS) {
+                this.showMessage(`Too much data to render clearly (${nodes.length} location/stage combinations, ${links.length} flows). Try filtering to fewer Keys, Stages, or Locations, or aggregate your data further.`);
+                this.render([], [], [], width, height);
+                this.events.renderingFinished(options);
+                return;
+            }
+
             this.showMessage(null);
             this.render(nodes, links, stageLabels, width, height);
 
@@ -277,10 +293,11 @@ export class Visual implements IVisual {
         // by label font size, not just an arbitrary small bar height.
         const nodesPerStage = new Map<number, number>();
         nodes.forEach(node => nodesPerStage.set(node.stageIndex, (nodesPerStage.get(node.stageIndex) || 0) + 1));
-        const maxNodesInColumn: number = Math.max(1, ...Array.from(nodesPerStage.values()));
+        let maxNodesInColumn = 1;
+        nodesPerStage.forEach(count => { if (count > maxNodesInColumn) maxNodesInColumn = count; });
         const minNodeHeight: number = showLabels ? Math.max(4, labelFontSize + 4) : 4;
         const requiredContentHeight: number = maxNodesInColumn * minNodeHeight + Math.max(0, maxNodesInColumn - 1) * nodePadding;
-        const contentHeight: number = Math.max(availableContentHeight, requiredContentHeight);
+        const contentHeight: number = Math.min(MAX_SVG_HEIGHT_PX, Math.max(availableContentHeight, requiredContentHeight));
 
         this.svg.attr("height", contentHeight + margin.top + margin.bottom);
 
@@ -542,6 +559,12 @@ export class Visual implements IVisual {
             operator: action === "include" ? "In" : "NotIn",
             values: rawKeys
         };
+        // "selfFilter" makes this visual's own query respect the filter (so
+        // the Sankey itself redraws); "filter" additionally applies it as a
+        // normal cross-visual filter on the report page. Both properties
+        // must be declared under the "general" object in capabilities.json
+        // for the host to accept either call.
+        this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "selfFilter", FilterAction.merge);
         this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "filter", FilterAction.merge);
     }
 
@@ -556,6 +579,7 @@ export class Visual implements IVisual {
             operator: "All",
             values: []
         };
+        this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "selfFilter", FilterAction.remove);
         this.host.applyJsonFilter(filter as unknown as powerbi.IFilter, "general", "filter", FilterAction.remove);
     }
 

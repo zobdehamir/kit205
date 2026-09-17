@@ -765,9 +765,59 @@ export class Visual implements IVisual {
         return this.highlightFraction(node.rawKeys, highlightedKeys) > 0 ? 1 : 0.6;
     }
 
+    /**
+     * A simple top-X%-colored/bottom-gray split (used above) only lines up
+     * with a connected link's own colored/gray split when that's the node's
+     * *only* attached link -- once a node stacks several links top-to-
+     * bottom, each link's sub-band sits wherever that link happens to be
+     * stacked, not necessarily starting at the node's own top edge. Deriving
+     * the node's gradient stops directly from node.sourceLinks (or
+     * node.targetLinks for a terminal node with no outgoing links) --
+     * walking them in their actual stacking order and reusing each link's
+     * own y0/width -- guarantees the node's fill matches exactly where that
+     * side's links are colored vs gray, since it's built from the same
+     * numbers buildLinkSegments uses to draw those links.
+     */
+    private buildNodeGradientStops(node: LayoutNode, highlightedKeys: Set<string> | null): Array<{ offset: number; color: string }> {
+        const grayColor: string = this.settings.highlighting.unhighlightedColor;
+        const nodeHeight: number = node.y1 - node.y0;
+        const attachedLinks: LayoutLink[] = (node.sourceLinks && node.sourceLinks.length) ? node.sourceLinks : node.targetLinks;
+
+        if (!attachedLinks || !attachedLinks.length || nodeHeight <= 0) {
+            // Isolated node with no links to derive positions from -- fall
+            // back to a plain top/bottom split by highlighted fraction.
+            const fraction: number = this.highlightFraction(node.rawKeys, highlightedKeys);
+            return [
+                { offset: 0, color: node.color },
+                { offset: fraction, color: node.color },
+                { offset: fraction, color: grayColor },
+                { offset: 1, color: grayColor }
+            ];
+        }
+
+        const stops: Array<{ offset: number; color: string }> = [];
+        let cursor = 0;
+        attachedLinks.forEach(link => {
+            const baseWidth: number = link.width ?? 0;
+            const fraction: number = this.highlightFraction(link.rawKeys, highlightedKeys);
+            const highlightedWidth: number = baseWidth * fraction;
+
+            const startOffset: number = Math.max(0, Math.min(1, cursor / nodeHeight));
+            const midOffset: number = Math.max(0, Math.min(1, (cursor + highlightedWidth) / nodeHeight));
+            const endOffset: number = Math.max(0, Math.min(1, (cursor + baseWidth) / nodeHeight));
+
+            stops.push({ offset: startOffset, color: node.color });
+            stops.push({ offset: midOffset, color: node.color });
+            stops.push({ offset: midOffset, color: grayColor });
+            stops.push({ offset: endOffset, color: grayColor });
+
+            cursor += baseWidth;
+        });
+        return stops;
+    }
+
     private renderNodeHighlightGradients(nodes: LayoutNode[], highlightedKeys: Set<string> | null): void {
         const defs = this.svg.selectAll("defs").data([null]).join("defs");
-        const unhighlightedColor: string = this.settings.highlighting.unhighlightedColor;
 
         const partial = nodes
             .map((node, index) => ({ node, index, fraction: this.highlightFraction(node.rawKeys, highlightedKeys) }))
@@ -786,11 +836,14 @@ export class Visual implements IVisual {
         const gradientMerge = gradientEnter.merge(gradientSelection)
             .attr("id", d => `sankey-node-partial-${d.index}`);
 
-        gradientMerge.selectAll("stop").remove();
-        gradientMerge.append("stop").attr("offset", "0%").attr("stop-color", d => d.node.color);
-        gradientMerge.append("stop").attr("offset", d => `${d.fraction * 100}%`).attr("stop-color", d => d.node.color);
-        gradientMerge.append("stop").attr("offset", d => `${d.fraction * 100}%`).attr("stop-color", unhighlightedColor);
-        gradientMerge.append("stop").attr("offset", "100%").attr("stop-color", unhighlightedColor);
+        gradientMerge.each((d, i, groups) => {
+            const stops = this.buildNodeGradientStops(d.node, highlightedKeys);
+            const gradient = d3.select(groups[i]);
+            gradient.selectAll("stop").remove();
+            stops.forEach(stop => {
+                gradient.append("stop").attr("offset", `${stop.offset * 100}%`).attr("stop-color", stop.color);
+            });
+        });
     }
 
     private updateSelectionStyles(): void {

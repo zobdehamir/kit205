@@ -170,8 +170,15 @@ shared by both highlighted and unrelated keys (e.g. a "Hub" location
 visited by 3 keys, only 2 of which are highlighted), only that fraction of
 its height/width stays colored — the rest of that same shape turns gray,
 with a clean edge at the boundary — rather than coloring or graying the
-whole shape. Clicking the background, or the already-selected node again,
-clears the highlight and restores normal colors everywhere.
+whole shape. A node's colored/gray split is derived directly from its own
+outgoing links' positions (or incoming, for a final-stage node with no
+outgoing links), so the split inside a square lines up exactly with the
+matching split on the links leaving it, instead of an arbitrary top-of-
+the-square boundary. (The incoming side can legitimately look different —
+if two differently-highlighted flows merge into one node before splitting
+again downstream, that's the data, not a misalignment.) Clicking the
+background, or the already-selected node again, clears the highlight and
+restores normal colors everywhere.
 
 ## Safety limits on very large datasets
 
